@@ -193,7 +193,7 @@
         return select;
     };
 
-    const showSettingsPanel = (isOwn, playerId) => {
+    const showSettingsPanel = (profileId) => {
         const config = getConfig();
         const panel = document.createElement('div');
         panel.id = 'mlpn-panel';
@@ -203,6 +203,8 @@
         closeBtn.className = 'mlpn-button';
         closeBtn.textContent = 'Done';
         closeBtn.onclick = () => panel.remove();
+
+        const isOwn = !MY_PLAYER_ID || MY_PLAYER_ID === 'USER ID #' || profileId === MY_PLAYER_ID;
 
         if (isOwn) {
             panel.innerHTML = `
@@ -258,24 +260,24 @@
             panel.appendChild(customColorInput);
         } else {
             panel.innerHTML = `<label>Assign a color to this player's name:</label>`;
-            const dropdown = createColorDropdown('mlpn-other-color', config.players?.[playerId] || '#000000');
+            const dropdown = createColorDropdown('mlpn-other-color', config.players?.[profileId] || '#000000');
             const customInput = document.createElement('input');
             customInput.id = 'mlpn-other-custom';
             customInput.className = 'mlpn-input';
             customInput.placeholder = '#hex';
             customInput.style.display = dropdown.value === 'custom' ? 'block' : 'none';
-            customInput.value = config.players?.[playerId]?.startsWith('#') ? config.players[playerId] : '';
+            customInput.value = config.players?.[profileId]?.startsWith('#') ? config.players[profileId] : '';
 
             dropdown.onchange = () => {
                 if (!config.players) config.players = {};
                 customInput.style.display = dropdown.value === 'custom' ? 'block' : 'none';
-                config.players[playerId] = dropdown.value === 'custom' ? customInput.value : dropdown.value;
+                config.players[profileId] = dropdown.value === 'custom' ? customInput.value : dropdown.value;
                 saveConfig(config);
             };
 
             customInput.oninput = () => {
                 if (!config.players) config.players = {};
-                config.players[playerId] = customInput.value;
+                config.players[profileId] = customInput.value;
                 saveConfig(config);
             };
 
@@ -340,7 +342,7 @@
         });
     };
 
-    const injectSettingsButton = (isSelfProfile, profileId) => {
+    const injectSettingsButton = (profileId) => {
         if (document.getElementById('mlpn-settings-btn')) return;
 
         const target = document.querySelector('.content-title');
@@ -350,7 +352,7 @@
         btn.id = 'mlpn-settings-btn';
         btn.className = 'mlpn-button';
         btn.textContent = 'Custom Player Names';
-        btn.onclick = () => showSettingsPanel(isSelfProfile, profileId);
+        btn.onclick = () => showSettingsPanel(profileId);
         target.appendChild(btn);
     };
 
@@ -360,7 +362,7 @@
 
         const profileId = getProfileIdFromUrl();
         if (profileId) {
-            injectSettingsButton(profileId === MY_PLAYER_ID, profileId);
+            injectSettingsButton(profileId);
         }
 
         applyHonorStyles();
