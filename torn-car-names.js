@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Torn Car Names
-// @namespace    http://tampermonkey.net/
+// @namespace    https://github.com/hitful
 // @version      1.0
 // @description  Changes the current Torn car names back to their previous real-world names.
 // @author       bape
