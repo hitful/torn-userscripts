@@ -57,6 +57,7 @@
         link.href = 'https://fonts.googleapis.com/css2?' + FONT_OPTIONS.map(f => `family=${f.value.replace(' ', '+')}:wght@700`).join('&') + '&display=swap';
         link.rel = 'stylesheet';
         document.head.appendChild(link);
+        console.log('Fonts loaded');
     };
 
     const injectStyles = () => {
@@ -98,7 +99,7 @@
             }
 
             .mlpn-panel {
-                position: absolute;
+                position: fixed;
                 top: 50px;
                 left: 50%;
                 transform: translateX(-50%);
@@ -106,15 +107,17 @@
                 color: white;
                 border: 1px solid #444;
                 padding: 12px;
-                z-index: 99999;
+                z-index: 100000;
                 font-size: 14px;
                 border-radius: 6px;
-                width: max-content;
+                width: 250px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.5);
             }
 
             .mlpn-panel label {
                 display: block;
                 margin-top: 10px;
+                font-weight: bold;
             }
 
             .mlpn-button {
@@ -126,15 +129,17 @@
                 border-radius: 4px;
                 cursor: pointer;
                 margin-top: 10px;
+                width: 100%;
             }
 
             .mlpn-note {
                 font-size: 12px;
-                margin-top: 6px;
+                margin-top: 10px;
                 color: #aaa;
+                text-align: center;
             }
 
-            .mlpn-input {
+            .mlpn-input, .mlpn-select {
                 width: 100%;
                 padding: 5px;
                 margin-top: 5px;
@@ -142,19 +147,18 @@
                 color: white;
                 border: 1px solid #555;
                 border-radius: 4px;
+                box-sizing: border-box;
+                font-size: 14px;
             }
 
             .mlpn-select {
-                width: 100%;
-                padding: 5px;
-                margin-top: 5px;
-                background: #333;
-                color: white;
-                border: 1px solid #555;
-                border-radius: 4px;
+                appearance: menulist;
+                -webkit-appearance: menulist;
+                -moz-appearance: menulist;
             }
         `;
         document.head.appendChild(style);
+        console.log('Styles injected');
     };
 
     const getConfig = () => JSON.parse(localStorage.getItem(CONFIG_KEY) || '{}');
@@ -203,6 +207,7 @@
     };
 
     const showSettingsPanel = (isOwn, playerId) => {
+        console.log('Opening settings panel, isOwn:', isOwn, 'playerId:', playerId);
         const config = getConfig();
         const panel = document.createElement('div');
         panel.id = 'mlpn-panel';
@@ -214,24 +219,47 @@
         closeBtn.onclick = () => panel.remove();
 
         if (isOwn) {
-            panel.innerHTML = `
-                <label>Your Player ID:
-                    <input id="mlpn-player-id" type="text" class="mlpn-input" value="${config.playerId || MY_PLAYER_ID}" placeholder="Enter your player ID" />
-                </label>
-                <label>Font Family:
-                    <select id="mlpn-font-family" class="mlpn-select"></select>
-                </label>
-                <label>Font Size:
-                    <select id="mlpn-font-size" class="mlpn-select"></select>
-                </label>
-                <label>Color for Your Name:
-                    <select id="mlpn-my-color" class="mlpn-select"></select>
-                </label>
-            `;
+            // Player ID Input
+            const playerIdLabel = document.createElement('label');
+            playerIdLabel.textContent = 'Your Player ID:';
+            const playerIdInput = document.createElement('input');
+            playerIdInput.id = 'mlpn-player-id';
+            playerIdInput.className = 'mlpn-input';
+            playerIdInput.type = 'text';
+            playerIdInput.value = config.playerId || MY_PLAYER_ID;
+            playerIdInput.placeholder = 'Enter your player ID';
+            playerIdInput.oninput = () => {
+                config.playerId = playerIdInput.value.trim();
+                MY_PLAYER_ID = config.playerId || 'PLAYER_ID';
+                saveConfig(config);
+                console.log('Player ID updated:', MY_PLAYER_ID);
+            };
 
-            const playerIdInput = panel.querySelector('#mlpn-player-id');
+            // Font Family Dropdown
+            const fontLabel = document.createElement('label');
+            fontLabel.textContent = 'Font Family:';
             const fontDropdown = createFontDropdown('mlpn-font-family', config.fontFamily || 'Manrope');
+            fontDropdown.onchange = () => {
+                config.fontFamily = fontDropdown.value;
+                saveConfig(config);
+                updateHonorTextFont();
+                console.log('Font family updated:', config.fontFamily);
+            };
+
+            // Font Size Dropdown
+            const fontSizeLabel = document.createElement('label');
+            fontSizeLabel.textContent = 'Font Size:';
             const fontSizeDropdown = createFontSizeDropdown('mlpn-font-size', config.fontSize || 12);
+            fontSizeDropdown.onchange = () => {
+                config.fontSize = parseInt(fontSizeDropdown.value);
+                saveConfig(config);
+                updateHonorTextSize();
+                console.log('Font size updated:', config.fontSize);
+            };
+
+            // Color Dropdown
+            const colorLabel = document.createElement('label');
+            colorLabel.textContent = 'Color for Your Name:';
             const colorDropdown = createColorDropdown('mlpn-my-color', config.myColor || '#000000');
             const customColorInput = document.createElement('input');
             customColorInput.id = 'mlpn-my-custom';
@@ -239,69 +267,56 @@
             customColorInput.placeholder = '#hex';
             customColorInput.style.display = colorDropdown.value === 'custom' ? 'block' : 'none';
             customColorInput.value = config.myColor?.startsWith('#') ? config.myColor : '';
-
-            playerIdInput.oninput = () => {
-                config.playerId = playerIdInput.value.trim();
-                MY_PLAYER_ID = config.playerId || 'PLAYER_ID';
-                saveConfig(config);
-            };
-
-            fontDropdown.onchange = () => {
-                config.fontFamily = fontDropdown.value;
-                saveConfig(config);
-                updateHonorTextFont();
-            };
-
-            fontSizeDropdown.onchange = () => {
-                config.fontSize = parseInt(fontSizeDropdown.value);
-                saveConfig(config);
-                updateHonorTextSize();
-            };
-
             colorDropdown.onchange = () => {
                 customColorInput.style.display = colorDropdown.value === 'custom' ? 'block' : 'none';
                 config.myColor = colorDropdown.value === 'custom' ? customColorInput.value : colorDropdown.value;
                 saveConfig(config);
+                console.log('Color updated:', config.myColor);
             };
-
             customColorInput.oninput = () => {
                 config.myColor = customColorInput.value;
                 saveConfig(config);
+                console.log('Custom color updated:', config.myColor);
             };
 
-            panel.querySelector('#mlpn-font-family').replaceWith(fontDropdown);
-            panel.querySelector('#mlpn-font-size').replaceWith(fontSizeDropdown);
-            panel.querySelector('#mlpn-my-color').replaceWith(colorDropdown);
+            // Assemble panel
+            panel.appendChild(playerIdLabel);
+            panel.appendChild(playerIdInput);
+            panel.appendChild(fontLabel);
+            panel.appendChild(fontDropdown);
+            panel.appendChild(fontSizeLabel);
+            panel.appendChild(fontSizeDropdown);
+            panel.appendChild(colorLabel);
+            panel.appendChild(colorDropdown);
             panel.appendChild(customColorInput);
         } else {
-            panel.innerHTML = `
-                <label>Assign a color to this player's name:
-                    <select id="mlpn-other-color" class="mlpn-select"></select>
-                </label>
-            `;
-            const dropdown = createColorDropdown('mlpn-other-color', config.players?.[playerId] || '#000000');
-            const customInput = document.createElement('input');
-            customInput.id = 'mlpn-other-custom';
-            customInput.className = 'mlpn-input';
-            customInput.placeholder = '#hex';
-            customInput.style.display = dropdown.value === 'custom' ? 'block' : 'none';
-            customInput.value = config.players?.[playerId]?.startsWith('#') ? config.players[playerId] : '';
-
-            dropdown.onchange = () => {
+            // Other player's color settings
+            const colorLabel = document.createElement('label');
+            colorLabel.textContent = "Assign a color to this player's name:";
+            const colorDropdown = createColorDropdown('mlpn-other-color', config.players?.[playerId] || '#000000');
+            const customColorInput = document.createElement('input');
+            customColorInput.id = 'mlpn-other-custom';
+            customColorInput.className = 'mlpn-input';
+            customColorInput.placeholder = '#hex';
+            customColorInput.style.display = colorDropdown.value === 'custom' ? 'block' : 'none';
+            customColorInput.value = config.players?.[playerId]?.startsWith('#') ? config.players[playerId] : '';
+            colorDropdown.onchange = () => {
                 if (!config.players) config.players = {};
-                customInput.style.display = dropdown.value === 'custom' ? 'block' : 'none';
-                config.players[playerId] = dropdown.value === 'custom' ? customInput.value : dropdown.value;
+                customColorInput.style.display = colorDropdown.value === 'custom' ? 'block' : 'none';
+                config.players[playerId] = colorDropdown.value === 'custom' ? customColorInput.value : colorDropdown.value;
                 saveConfig(config);
+                console.log('Other player color updated:', config.players[playerId]);
+            };
+            customColorInput.oninput = () => {
+                if (!config.players) config.players = {};
+                config.players[playerId] = customColorInput.value;
+                saveConfig(config);
+                console.log('Other player custom color updated:', config.players[playerId]);
             };
 
-            customInput.oninput = () => {
-                if (!config.players) config.players = {};
-                config.players[playerId] = customInput.value;
-                saveConfig(config);
-            };
-
-            panel.querySelector('#mlpn-other-color').replaceWith(dropdown);
-            panel.appendChild(customInput);
+            panel.appendChild(colorLabel);
+            panel.appendChild(colorDropdown);
+            panel.appendChild(customColorInput);
         }
 
         const note = document.createElement('div');
@@ -311,6 +326,7 @@
         panel.appendChild(closeBtn);
 
         document.body.appendChild(panel);
+        console.log('Settings panel appended to document.body');
     };
 
     const getProfileIdFromUrl = () => {
@@ -385,7 +401,10 @@
         if (document.getElementById('mlpn-settings-btn')) return;
 
         const target = document.querySelector('.content-title');
-        if (!target) return;
+        if (!target) {
+            console.log('No .content-title found for settings button');
+            return;
+        }
 
         const btn = document.createElement('button');
         btn.id = 'mlpn-settings-btn';
@@ -393,19 +412,24 @@
         btn.textContent = 'Custom Player Names';
         btn.onclick = () => showSettingsPanel(isSelfProfile, profileId);
         target.appendChild(btn);
+        console.log('Settings button injected');
     };
 
     const init = () => {
+        console.log('Script initializing...');
         const config = getConfig();
         MY_PLAYER_ID = config.playerId || MY_PLAYER_ID;
 
         const profileId = getProfileIdFromUrl();
         if (profileId) {
             injectSettingsButton(profileId === MY_PLAYER_ID, profileId);
+        } else {
+            console.log('No profile ID found in URL');
         }
 
         applyHonorStyles();
         new MutationObserver(applyHonorStyles).observe(document.body, { childList: true, subtree: true });
+        console.log('MutationObserver set up');
     };
 
     loadFonts();
