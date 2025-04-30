@@ -13,7 +13,7 @@
 (function () {
     'use strict';
 
-    const MY_PLAYER_ID = 'USER ID #'; // ← Your player ID here
+    let MY_PLAYER_ID = 'USER ID #'; // ← Will be updated via settings
     const CONFIG_KEY = 'mlpn-config';
 
     const COLOR_OPTIONS = [
@@ -30,9 +30,31 @@
         { name: 'Custom…', value: 'custom' }
     ];
 
-    const loadFont = () => {
+    const FONT_SIZE_OPTIONS = [
+        { name: '8px', value: 8 },
+        { name: '10px', value: 10 },
+        { name: '12px', value: 12 },
+        { name: '14px', value: 14 },
+        { name: '16px', value: 16 },
+        { name: '18px', value: 18 },
+        { name: '20px', value: 20 },
+        { name: '22px', value: 22 },
+        { name: '24px', value: 24 }
+    ];
+
+    const FONT_FAMILY_OPTIONS = [
+        { name: 'Manrope', value: 'Manrope' },
+        { name: 'Roboto', value: 'Roboto' },
+        { name: 'Open Sans', value: 'Open Sans' },
+        { name: 'Lato', value: 'Lato' },
+        { name: 'Montserrat', value: 'Montserrat' },
+        { name: 'Poppins', value: 'Poppins' },
+        { name: 'Source Sans Pro', value: 'Source Sans Pro' }
+    ];
+
+    const loadFonts = () => {
         const link = document.createElement('link');
-        link.href = 'https://fonts.googleapis.com/css2?family=Manrope:wght@700&display=swap';
+        link.href = 'https://fonts.googleapis.com/css2?' + FONT_FAMILY_OPTIONS.map(f => `family=${f.value.replace(' ', '+')}:wght@700`).join('&') + '&display=swap';
         link.rel = 'stylesheet';
         document.head.appendChild(link);
     };
@@ -76,7 +98,7 @@
             }
 
             .mlpn-panel {
-                position: absolute;
+                position: fixed;
                 top: 50px;
                 left: 50%;
                 transform: translateX(-50%);
@@ -111,6 +133,17 @@
                 margin-top: 6px;
                 color: #aaa;
             }
+
+            .mlpn-input, .mlpn-select {
+                width: 100%;
+                padding: 5px;
+                margin-top: 5px;
+                background: #333;
+                color: white;
+                border: 1px solid #555;
+                border-radius: 4px;
+                box-sizing: border-box;
+            }
         `;
         document.head.appendChild(style);
     };
@@ -121,6 +154,7 @@
     const createColorDropdown = (id, selectedValue) => {
         const select = document.createElement('select');
         select.id = id;
+        select.className = 'mlpn-select';
         COLOR_OPTIONS.forEach(c => {
             const opt = document.createElement('option');
             opt.value = c.value;
@@ -128,6 +162,34 @@
             select.appendChild(opt);
         });
         select.value = COLOR_OPTIONS.some(c => c.value === selectedValue) ? selectedValue : 'custom';
+        return select;
+    };
+
+    const createFontSizeDropdown = (id, selectedValue) => {
+        const select = document.createElement('select');
+        select.id = id;
+        select.className = 'mlpn-select';
+        FONT_SIZE_OPTIONS.forEach(s => {
+            const opt = document.createElement('option');
+            opt.value = s.value;
+            opt.textContent = s.name;
+            select.appendChild(opt);
+        });
+        select.value = FONT_SIZE_OPTIONS.some(s => s.value === selectedValue) ? selectedValue : 12;
+        return select;
+    };
+
+    const createFontFamilyDropdown = (id, selectedValue) => {
+        const select = document.createElement('select');
+        select.id = id;
+        select.className = 'mlpn-select';
+        FONT_FAMILY_OPTIONS.forEach(f => {
+            const opt = document.createElement('option');
+            opt.value = f.value;
+            opt.textContent = f.name;
+            select.appendChild(opt);
+        });
+        select.value = FONT_FAMILY_OPTIONS.some(f => f.value === selectedValue) ? selectedValue : 'Manrope';
         return select;
     };
 
@@ -144,43 +206,62 @@
 
         if (isOwn) {
             panel.innerHTML = `
-                <label>Font Size:
-                    <input id="mlpn-font-size" type="number" min="8" max="24" value="${config.fontSize || 12}" />
+                <label>Your Player ID:
+                    <input id="mlpn-player-id" type="text" class="mlpn-input" value="${config.playerId || MY_PLAYER_ID}" placeholder="Enter your player ID" />
                 </label>
+                <label>Font Family:</label>
+                <label>Font Size:</label>
                 <label>Color for Your Name:</label>
             `;
-            const dropdown = createColorDropdown('mlpn-my-color', config.myColor || '#000000');
-            const customInput = document.createElement('input');
-            customInput.id = 'mlpn-my-custom';
-            customInput.placeholder = '#hex';
-            customInput.style.display = dropdown.value === 'custom' ? 'block' : 'none';
-            customInput.value = config.myColor?.startsWith('#') ? config.myColor : '';
+            const playerIdInput = panel.querySelector('#mlpn-player-id');
+            const fontFamilyDropdown = createFontFamilyDropdown('mlpn-font-family', config.fontFamily || 'Manrope');
+            const fontSizeDropdown = createFontSizeDropdown('mlpn-font-size', config.fontSize || 12);
+            const colorDropdown = createColorDropdown('mlpn-my-color', config.myColor || '#000000');
+            const customColorInput = document.createElement('input');
+            customColorInput.id = 'mlpn-my-custom';
+            customColorInput.className = 'mlpn-input';
+            customColorInput.placeholder = '#hex';
+            customColorInput.style.display = colorDropdown.value === 'custom' ? 'block' : 'none';
+            customColorInput.value = config.myColor?.startsWith('#') ? config.myColor : '';
 
-            dropdown.onchange = () => {
-                customInput.style.display = dropdown.value === 'custom' ? 'block' : 'none';
-                config.myColor = dropdown.value === 'custom' ? customInput.value : dropdown.value;
+            playerIdInput.oninput = () => {
+                config.playerId = playerIdInput.value.trim();
+                MY_PLAYER_ID = config.playerId || 'USER ID #';
                 saveConfig(config);
             };
 
-            customInput.oninput = () => {
-                config.myColor = customInput.value;
+            fontFamilyDropdown.onchange = () => {
+                config.fontFamily = fontFamilyDropdown.value;
                 saveConfig(config);
             };
 
-            const fontInput = panel.querySelector('#mlpn-font-size');
-            fontInput.oninput = () => {
-                config.fontSize = parseInt(fontInput.value);
+            fontSizeDropdown.onchange = () => {
+                config.fontSize = parseInt(fontSizeDropdown.value);
+                saveConfig(config);
+            };
+
+            colorDropdown.onchange = () => {
+                customColorInput.style.display = colorDropdown.value === 'custom' ? 'block' : 'none';
+                config.myColor = colorDropdown.value === 'custom' ? customColorInput.value : colorDropdown.value;
+                saveConfig(config);
+            };
+
+            customColorInput.oninput = () => {
+                config.myColor = customColorInput.value;
                 saveConfig(config);
             };
 
             document.body.appendChild(panel);
-            panel.appendChild(dropdown);
-            panel.appendChild(customInput);
+            panel.insertBefore(fontFamilyDropdown, panel.querySelector('label:nth-child(2)'));
+            panel.insertBefore(fontSizeDropdown, panel.querySelector('label:nth-child(3)'));
+            panel.appendChild(colorDropdown);
+            panel.appendChild(customColorInput);
         } else {
             panel.innerHTML = `<label>Assign a color to this player's name:</label>`;
             const dropdown = createColorDropdown('mlpn-other-color', config.players?.[playerId] || '#000000');
             const customInput = document.createElement('input');
             customInput.id = 'mlpn-other-custom';
+            customInput.className = 'mlpn-input';
             customInput.placeholder = '#hex';
             customInput.style.display = dropdown.value === 'custom' ? 'block' : 'none';
             customInput.value = config.players?.[playerId]?.startsWith('#') ? config.players[playerId] : '';
@@ -218,6 +299,7 @@
     const applyHonorStyles = () => {
         const config = getConfig();
         const fontSize = parseInt(config.fontSize) || 12;
+        const fontFamily = config.fontFamily || 'Manrope';
         const profileId = getProfileIdFromUrl();
 
         document.querySelectorAll('.honor-text-wrap').forEach(wrap => {
@@ -230,7 +312,7 @@
                 const match = anchor.href.match(/XID=(\d+)/);
                 if (match) playerId = match[1];
             } else if (profileId) {
-                playerId = profileId; // Fallback for profile pages
+                playerId = profileId;
             }
 
             const text = wrap.getAttribute('data-title') || wrap.getAttribute('aria-label') || wrap.innerText || '';
@@ -252,6 +334,7 @@
             const div = document.createElement('div');
             div.className = 'custom-honor-text';
             div.style.fontSize = `${fontSize}px`;
+            div.style.fontFamily = `'${fontFamily}', sans-serif`;
             div.textContent = cleaned;
             wrap.appendChild(div);
         });
@@ -272,6 +355,9 @@
     };
 
     const init = () => {
+        const config = getConfig();
+        MY_PLAYER_ID = config.playerId || MY_PLAYER_ID;
+
         const profileId = getProfileIdFromUrl();
         if (profileId) {
             injectSettingsButton(profileId === MY_PLAYER_ID, profileId);
@@ -281,7 +367,7 @@
         new MutationObserver(applyHonorStyles).observe(document.body, { childList: true, subtree: true });
     };
 
-    loadFont();
+    loadFonts();
     injectStyles();
     init();
 })();
