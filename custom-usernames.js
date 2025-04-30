@@ -13,7 +13,7 @@
 (function () {
     'use strict';
 
-    let MY_PLAYER_ID = 'USER ID #'; // ← Will be updated via settings
+    const MY_PLAYER_ID = 'USER ID #'; // ← Your player ID here
     const CONFIG_KEY = 'mlpn-config';
 
     const COLOR_OPTIONS = [
@@ -28,18 +28,6 @@
         { name: 'Teal', value: '#00d9c0' },
         { name: 'White', value: '#ffffff' },
         { name: 'Custom…', value: 'custom' }
-    ];
-
-    const FONT_SIZE_OPTIONS = [
-        { name: '8px', value: 8 },
-        { name: '10px', value: 10 },
-        { name: '12px', value: 12 },
-        { name: '14px', value: 14 },
-        { name: '16px', value: 16 },
-        { name: '18px', value: 18 },
-        { name: '20px', value: 20 },
-        { name: '22px', value: 22 },
-        { name: '24px', value: 24 }
     ];
 
     const loadFont = () => {
@@ -123,17 +111,6 @@
                 margin-top: 6px;
                 color: #aaa;
             }
-
-            .mlpn-input, .mlpn-select {
-                width: 100%;
-                padding: 5px;
-                margin-top: 5px;
-                background: #333;
-                color: white;
-                border: 1px solid #555;
-                border-radius: 4px;
-                box-sizing: border-box;
-            }
         `;
         document.head.appendChild(style);
     };
@@ -144,7 +121,6 @@
     const createColorDropdown = (id, selectedValue) => {
         const select = document.createElement('select');
         select.id = id;
-        select.className = 'mlpn-select';
         COLOR_OPTIONS.forEach(c => {
             const opt = document.createElement('option');
             opt.value = c.value;
@@ -152,20 +128,6 @@
             select.appendChild(opt);
         });
         select.value = COLOR_OPTIONS.some(c => c.value === selectedValue) ? selectedValue : 'custom';
-        return select;
-    };
-
-    const createFontSizeDropdown = (id, selectedValue) => {
-        const select = document.createElement('select');
-        select.id = id;
-        select.className = 'mlpn-select';
-        FONT_SIZE_OPTIONS.forEach(s => {
-            const opt = document.createElement('option');
-            opt.value = s.value;
-            opt.textContent = s.name;
-            select.appendChild(opt);
-        });
-        select.value = FONT_SIZE_OPTIONS.some(s => s.value === selectedValue) ? selectedValue : 12;
         return select;
     };
 
@@ -182,54 +144,43 @@
 
         if (isOwn) {
             panel.innerHTML = `
-                <label>Your Player ID:
-                    <input id="mlpn-player-id" type="text" class="mlpn-input" value="${config.playerId || MY_PLAYER_ID}" placeholder="Enter your player ID" />
+                <label>Font Size:
+                    <input id="mlpn-font-size" type="number" min="8" max="24" value="${config.fontSize || 12}" />
                 </label>
-                <label>Font Size:</label>
                 <label>Color for Your Name:</label>
             `;
-            const playerIdInput = panel.querySelector('#mlpn-player-id');
-            const fontSizeDropdown = createFontSizeDropdown('mlpn-font-size', config.fontSize || 12);
-            const colorDropdown = createColorDropdown('mlpn-my-color', config.myColor || '#000000');
-            const customColorInput = document.createElement('input');
-            customColorInput.id = 'mlpn-my-custom';
-            customColorInput.className = 'mlpn-input';
-            customColorInput.placeholder = '#hex';
-            customColorInput.style.display = colorDropdown.value === 'custom' ? 'block' : 'none';
-            customColorInput.value = config.myColor?.startsWith('#') ? config.myColor : '';
+            const dropdown = createColorDropdown('mlpn-my-color', config.myColor || '#000000');
+            const customInput = document.createElement('input');
+            customInput.id = 'mlpn-my-custom';
+            customInput.placeholder = '#hex';
+            customInput.style.display = dropdown.value === 'custom' ? 'block' : 'none';
+            customInput.value = config.myColor?.startsWith('#') ? config.myColor : '';
 
-            playerIdInput.oninput = () => {
-                config.playerId = playerIdInput.value.trim();
-                MY_PLAYER_ID = config.playerId || 'USER ID #';
+            dropdown.onchange = () => {
+                customInput.style.display = dropdown.value === 'custom' ? 'block' : 'none';
+                config.myColor = dropdown.value === 'custom' ? customInput.value : dropdown.value;
                 saveConfig(config);
             };
 
-            fontSizeDropdown.onchange = () => {
-                config.fontSize = parseInt(fontSizeDropdown.value);
+            customInput.oninput = () => {
+                config.myColor = customInput.value;
                 saveConfig(config);
             };
 
-            colorDropdown.onchange = () => {
-                customColorInput.style.display = colorDropdown.value === 'custom' ? 'block' : 'none';
-                config.myColor = colorDropdown.value === 'custom' ? customColorInput.value : colorDropdown.value;
-                saveConfig(config);
-            };
-
-            customColorInput.oninput = () => {
-                config.myColor = customColorInput.value;
+            const fontInput = panel.querySelector('#mlpn-font-size');
+            fontInput.oninput = () => {
+                config.fontSize = parseInt(fontInput.value);
                 saveConfig(config);
             };
 
             document.body.appendChild(panel);
-            panel.insertBefore(fontSizeDropdown, panel.querySelector('label:nth-child(3)'));
-            panel.appendChild(colorDropdown);
-            panel.appendChild(customColorInput);
+            panel.appendChild(dropdown);
+            panel.appendChild(customInput);
         } else {
             panel.innerHTML = `<label>Assign a color to this player's name:</label>`;
             const dropdown = createColorDropdown('mlpn-other-color', config.players?.[playerId] || '#000000');
             const customInput = document.createElement('input');
             customInput.id = 'mlpn-other-custom';
-            customInput.className = 'mlpn-input';
             customInput.placeholder = '#hex';
             customInput.style.display = dropdown.value === 'custom' ? 'block' : 'none';
             customInput.value = config.players?.[playerId]?.startsWith('#') ? config.players[playerId] : '';
@@ -321,9 +272,6 @@
     };
 
     const init = () => {
-        const config = getConfig();
-        MY_PLAYER_ID = config.playerId || MY_PLAYER_ID;
-
         const profileId = getProfileIdFromUrl();
         if (profileId) {
             injectSettingsButton(profileId === MY_PLAYER_ID, profileId);
