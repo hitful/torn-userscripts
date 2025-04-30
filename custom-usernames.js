@@ -125,7 +125,7 @@
             .mlpn-input {
                 width: 100%;
                 padding: 5px;
-                margin-top: 5px;
+                margin-top: 5px;A
                 background: #333;
                 color: white;
                 border: 1px solid #555;
@@ -239,7 +239,6 @@
                 saveConfig(config);
             };
 
-            document.body.appendChild(panel);
             panel.appendChild(fontDropdown);
             panel.appendChild(dropdown);
             panel.appendChild(customInput);
@@ -266,7 +265,6 @@
                 saveConfig(config);
             };
 
-            document.body.appendChild(panel);
             panel.appendChild(dropdown);
             panel.appendChild(customInput);
         }
@@ -276,6 +274,8 @@
         note.textContent = 'Refresh the page to apply settings.';
         panel.appendChild(note);
         panel.appendChild(closeBtn);
+
+        document.body.appendChild(panel);
     };
 
     const getProfileIdFromUrl = () => {
