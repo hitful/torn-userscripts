@@ -13,7 +13,7 @@
 (function () {
     'use strict';
 
-    let MY_PLAYER_ID = 'USER ID #'; // ← Will be updated via settings
+    let MY_PLAYER_ID = 'USER ID #'; // ← Will be updated via settings or prompt
     const CONFIG_KEY = 'mlpn-config';
 
     const COLOR_OPTIONS = [
@@ -57,6 +57,7 @@
         link.href = 'https://fonts.googleapis.com/css2?' + FONT_FAMILY_OPTIONS.map(f => `family=${f.value.replace(' ', '+')}:wght@700`).join('&') + '&display=swap';
         link.rel = 'stylesheet';
         document.head.appendChild(link);
+        console.log('Fonts loaded');
     };
 
     const injectStyles = () => {
@@ -72,7 +73,6 @@
             }`;
         }).join('\n') + `
             .custom-honor-text {
-                font-family: 'Manrope', sans-serif !important;
                 font-weight: 700 !important;
                 color: white !important;
                 text-transform: uppercase !important;
@@ -146,6 +146,7 @@
             }
         `;
         document.head.appendChild(style);
+        console.log('Styles injected');
     };
 
     const getConfig = () => JSON.parse(localStorage.getItem(CONFIG_KEY) || '{}');
@@ -194,6 +195,7 @@
     };
 
     const showSettingsPanel = (profileId) => {
+        console.log('Opening settings panel for profileId:', profileId);
         const config = getConfig();
         const panel = document.createElement('div');
         panel.id = 'mlpn-panel';
@@ -204,7 +206,7 @@
         closeBtn.textContent = 'Done';
         closeBtn.onclick = () => panel.remove();
 
-        const isOwn = !MY_PLAYER_ID || MY_PLAYER_ID === 'USER ID #' || profileId === MY_PLAYER_ID;
+        const isOwn = !config.playerId || config.playerId === 'USER ID #' || profileId === MY_PLAYER_ID;
 
         if (isOwn) {
             panel.innerHTML = `
@@ -230,27 +232,36 @@
                 config.playerId = playerIdInput.value.trim();
                 MY_PLAYER_ID = config.playerId || 'USER ID #';
                 saveConfig(config);
+                console.log('Player ID updated:', MY_PLAYER_ID);
             };
 
             fontFamilyDropdown.onchange = () => {
                 config.fontFamily = fontFamilyDropdown.value;
                 saveConfig(config);
+                applyHonorStyles();
+                console.log('Font family updated:', config.fontFamily);
             };
 
             fontSizeDropdown.onchange = () => {
                 config.fontSize = parseInt(fontSizeDropdown.value);
                 saveConfig(config);
+                applyHonorStyles();
+                console.log('Font size updated:', config.fontSize);
             };
 
             colorDropdown.onchange = () => {
                 customColorInput.style.display = colorDropdown.value === 'custom' ? 'block' : 'none';
                 config.myColor = colorDropdown.value === 'custom' ? customColorInput.value : colorDropdown.value;
                 saveConfig(config);
+                applyHonorStyles();
+                console.log('Color updated:', config.myColor);
             };
 
             customColorInput.oninput = () => {
                 config.myColor = customColorInput.value;
                 saveConfig(config);
+                applyHonorStyles();
+                console.log('Custom color updated:', config.myColor);
             };
 
             document.body.appendChild(panel);
@@ -258,6 +269,7 @@
             panel.insertBefore(fontSizeDropdown, panel.querySelector('label:nth-child(3)'));
             panel.appendChild(colorDropdown);
             panel.appendChild(customColorInput);
+            console.log('Full settings panel rendered');
         } else {
             panel.innerHTML = `<label>Assign a color to this player's name:</label>`;
             const dropdown = createColorDropdown('mlpn-other-color', config.players?.[profileId] || '#000000');
@@ -273,17 +285,22 @@
                 customInput.style.display = dropdown.value === 'custom' ? 'block' : 'none';
                 config.players[profileId] = dropdown.value === 'custom' ? customInput.value : dropdown.value;
                 saveConfig(config);
+                applyHonorStyles();
+                console.log('Other player color updated:', config.players[profileId]);
             };
 
             customInput.oninput = () => {
                 if (!config.players) config.players = {};
                 config.players[profileId] = customInput.value;
                 saveConfig(config);
+                applyHonorStyles();
+                console.log('Other player custom color updated:', config.players[profileId]);
             };
 
             document.body.appendChild(panel);
             panel.appendChild(dropdown);
             panel.appendChild(customInput);
+            console.log('Color-only panel rendered');
         }
 
         const note = document.createElement('div');
@@ -339,6 +356,7 @@
             div.style.fontFamily = `'${fontFamily}', sans-serif`;
             div.textContent = cleaned;
             wrap.appendChild(div);
+            console.log(`Applied styles to honor bar: font=${fontFamily}, size=${fontSize}px, color=${color}`);
         });
     };
 
@@ -346,7 +364,10 @@
         if (document.getElementById('mlpn-settings-btn')) return;
 
         const target = document.querySelector('.content-title');
-        if (!target) return;
+        if (!target) {
+            console.log('No .content-title found for settings button');
+            return;
+        }
 
         const btn = document.createElement('button');
         btn.id = 'mlpn-settings-btn';
@@ -354,19 +375,35 @@
         btn.textContent = 'Custom Player Names';
         btn.onclick = () => showSettingsPanel(profileId);
         target.appendChild(btn);
+        console.log('Settings button injected');
     };
 
     const init = () => {
+        console.log('Script initializing...');
         const config = getConfig();
         MY_PLAYER_ID = config.playerId || MY_PLAYER_ID;
+
+        // Prompt for player ID if unset
+        if (!config.playerId || config.playerId === 'USER ID #') {
+            const id = prompt('Please enter your Torn player ID:', MY_PLAYER_ID);
+            if (id && id.trim() !== 'USER ID #') {
+                config.playerId = id.trim();
+                MY_PLAYER_ID = config.playerId;
+                saveConfig(config);
+                console.log('Player ID set via prompt:', MY_PLAYER_ID);
+            }
+        }
 
         const profileId = getProfileIdFromUrl();
         if (profileId) {
             injectSettingsButton(profileId);
+        } else {
+            console.log('No profile ID found in URL');
         }
 
         applyHonorStyles();
         new MutationObserver(applyHonorStyles).observe(document.body, { childList: true, subtree: true });
+        console.log('MutationObserver set up');
     };
 
     loadFonts();
