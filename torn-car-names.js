@@ -6,8 +6,8 @@
 // @author       bape
 // @match        https://www.torn.com/*
 // @grant        none
-// @downloadURL https://raw.githubusercontent.com/hitful/torn-car-names/refs/heads/main/torn-car-names.js
-// @updateURL https://raw.githubusercontent.com/hitful/torn-car-names/refs/heads/main/torn-car-names.js
+// @downloadURL https://raw.githubusercontent.com/hitful/torn-userscripts/refs/heads/main/torn-car-names.js
+// @updateURL https://raw.githubusercontent.com/hitful/torn-userscripts/refs/heads/main/torn-car-names.js
 // ==/UserScript==
 
 (function() {
