@@ -1,14 +1,13 @@
 // ==UserScript==
-// @name         Torn: More Legible Player Names With Custom Color Outlines
-// @namespace    http://tampermonkey.net/
-// @version      2
-// @description  More Legible Font and custom color outlines for player names on honor bars. No API key required. Set your player ID manually for full reliability.
-// @author       Gingerbeardman
+// @name         Custom Usernames
+// @namespace    https://github.com/hitful
+// @version      1
+// @description  Custom username font and custom color outlines for player names on honor bars. No API key required. Set your player ID manually for full reliability.
+// @author       bape
 // @match        https://www.torn.com/*
 // @grant        none
-// @license      GNU GPLv3
-// @downloadURL https://raw.githubusercontent.com/hitful/torn-userscripts/refs/heads/main/readable-usernames.js
-// @updateURL https://raw.githubusercontent.com/hitful/torn-userscripts/refs/heads/main/readable-usernames.js
+// @downloadURL https://raw.githubusercontent.com/hitful/torn-userscripts/refs/heads/main/custom-usernames.js
+// @updateURL https://raw.githubusercontent.com/hitful/torn-userscripts/refs/heads/main/custom-usernames.js
 // ==/UserScript==
 
 (function () {
