@@ -7,8 +7,8 @@
 // @match        https://www.torn.com/*
 // @grant        none
 // @license      GNU GPLv3
-// @downloadURL https://update.greasyfork.org/scripts/531657/Torn%3A%20More%20Legible%20Player%20Names%20With%20Custom%20Color%20Outlines.user.js
-// @updateURL https://update.greasyfork.org/scripts/531657/Torn%3A%20More%20Legible%20Player%20Names%20With%20Custom%20Color%20Outlines.meta.js
+// @downloadURL https://raw.githubusercontent.com/hitful/torn-userscripts/refs/heads/main/readable-usernames.js
+// @updateURL https://raw.githubusercontent.com/hitful/torn-userscripts/refs/heads/main/readable-usernames.js
 // ==/UserScript==
 
 (function () {
