@@ -49,15 +49,24 @@
         { name: 'Lato', value: 'Lato' },
         { name: 'Montserrat', value: 'Montserrat' },
         { name: 'Poppins', value: 'Poppins' },
-        { name: 'Source Sans Pro', value: 'Source Sans Pro' }
+        { name: 'Source Sans Pro', value: 'Source Sans Pro' },
+        { name: 'Inter', value: 'Inter' },
+        { name: 'Nunito', value: 'Nunito' },
+        { name: 'Raleway', value: 'Raleway' },
+        { name: 'Ubuntu', value: 'Ubuntu' },
+        { name: 'Arial', value: 'Arial' },
+        { name: 'Verdana', value: 'Verdana' },
+        { name: 'Helvetica', value: 'Helvetica' }
     ];
 
     const loadFonts = () => {
+        // Only load Google Fonts, exclude web-safe fonts (Arial, Verdana, Helvetica)
+        const googleFonts = FONT_FAMILY_OPTIONS.filter(f => !['Arial', 'Verdana', 'Helvetica'].includes(f.value));
         const link = document.createElement('link');
-        link.href = 'https://fonts.googleapis.com/css2?' + FONT_FAMILY_OPTIONS.map(f => `family=${f.value.replace(' ', '+')}:wght@700`).join('&') + '&display=swap';
+        link.href = 'https://fonts.googleapis.com/css2?' + googleFonts.map(f => `family=${f.value.replace(' ', '+')}:wght@700`).join('&') + '&display=swap';
         link.rel = 'stylesheet';
         document.head.appendChild(link);
-        console.log('Fonts loaded');
+        console.log('Google Fonts loaded:', googleFonts.map(f => f.value));
     };
 
     const injectStyles = () => {
@@ -163,6 +172,7 @@
             select.appendChild(opt);
         });
         select.value = COLOR_OPTIONS.some(c => c.value === selectedValue) ? selectedValue : 'custom';
+        console.log('Color dropdown created with value:', select.value);
         return select;
     };
 
@@ -176,7 +186,9 @@
             opt.textContent = s.name;
             select.appendChild(opt);
         });
-        select.value = FONT_SIZE_OPTIONS.some(s => s.value === selectedValue) ? selectedValue : 12;
+        const validValue = FONT_SIZE_OPTIONS.some(s => s.value === parseInt(selectedValue)) ? parseInt(selectedValue) : 12;
+        select.value = validValue;
+        console.log('Font size dropdown created with value:', validValue);
         return select;
     };
 
@@ -190,7 +202,9 @@
             opt.textContent = f.name;
             select.appendChild(opt);
         });
-        select.value = FONT_FAMILY_OPTIONS.some(f => f.value === selectedValue) ? selectedValue : 'Manrope';
+        const validValue = FONT_FAMILY_OPTIONS.some(f => f.value === selectedValue) ? selectedValue : 'Manrope';
+        select.value = validValue;
+        console.log('Font family dropdown created with value:', validValue);
         return select;
     };
 
@@ -218,8 +232,8 @@
                 <label>Color for Your Name:</label>
             `;
             const playerIdInput = panel.querySelector('#mlpn-player-id');
-            const fontFamilyDropdown = createFontFamilyDropdown('mlpn-font-family', config.fontFamily || 'Manrope');
-            const fontSizeDropdown = createFontSizeDropdown('mlpn-font-size', config.fontSize || 12);
+            const fontFamilyDropdown = createFontFamilyDropdown('mlpn-font-family', config.fontFamily);
+            const fontSizeDropdown = createFontSizeDropdown('mlpn-font-size', config.fontSize);
             const colorDropdown = createColorDropdown('mlpn-my-color', config.myColor || '#000000');
             const customColorInput = document.createElement('input');
             customColorInput.id = 'mlpn-my-custom';
