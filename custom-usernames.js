@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Custom Usernames
 // @namespace    https://github.com/hitful
-// @version      1
-// @description  Custom username font and custom color outlines for player names on honor bars. No API key required. Set your player ID manually for full reliability.
+// @version      1.1
+// @description  Custom username font and custom color outlines for player names on honor bars, with compatibility for Torn's blue names. No API key required. Set your player ID manually for full reliability.
 // @author       bape
 // @match        https://www.torn.com/*
 // @grant        none
@@ -60,7 +60,6 @@
     ];
 
     const loadFonts = () => {
-        // Only load Google Fonts, exclude web-safe fonts (Arial, Verdana, Helvetica)
         const googleFonts = FONT_FAMILY_OPTIONS.filter(f => !['Arial', 'Verdana', 'Helvetica'].includes(f.value));
         const link = document.createElement('link');
         link.href = 'https://fonts.googleapis.com/css2?' + googleFonts.map(f => `family=${f.value.replace(' ', '+')}:wght@700`).join('&') + '&display=swap';
@@ -73,32 +72,32 @@
         const style = document.createElement('style');
         style.textContent = COLOR_OPTIONS.filter(c => c.value !== 'custom').map(c => {
             const hex = c.value.replace('#', '');
-            return `.mlpn-color-${hex} .custom-honor-text {
+            return `.mlpn-color-${hex}:not(.blue-name):not(.blue-name *) .custom-honor-text {
                 text-shadow:
                     -1px -1px 0 ${c.value},
                      1px -1px 0 ${c.value},
                     -1px  1px 0 ${c.value},
-                     1px  1px 0 ${c.value} !important;
-            }`;
-        }).join('\n') + `
-            .custom-honor-text {
-                font-weight: 700 !important;
+                     1px  1px !important};
+            }`).join('\n') + `
+            .custom-honor-text:not(.blue-name):not(.blue-name *) {
+                font-weight: bold !important;
                 color: white !important;
-                text-transform: uppercase !important;
-                letter-spacing: 0.5px !important;
+                text-transform: uppercase !importantLetterSpacing;
+ color: spacing: 0.5px !important;
+                letter-spacing;
                 pointer-events: none !important;
                 position: absolute !important;
                 top: 50%;
                 left: 0;
                 transform: translateY(-50%);
-                width: 100% !important;
+                width: 100%;
                 display: flex !important;
                 align-items: center;
                 justify-content: center;
                 text-align: center !important;
                 line-height: 1 !important;
-                margin: 0 !important;
-                padding: 0 !important;
+                margin-top:0 !important;
+                padding:0 !important;
                 z-index: 10 !important;
             }
 
@@ -155,7 +154,7 @@
             }
         `;
         document.head.appendChild(style);
-        console.log('Styles injected');
+        console.log('Styles injected with blue name compatibility');
     };
 
     const getConfig = () => JSON.parse(localStorage.getItem(CONFIG_KEY) || '{}');
@@ -339,8 +338,13 @@
             if (wrap.querySelector('.custom-honor-text')) return;
 
             const anchor = wrap.closest('a[href*="XID="]');
-            let playerId = null;
+            const isBlueName = wrap.closest('.blue-name') || wrap.querySelector('.blue-name') || (anchor && anchor.classList.contains('blue-name'));
+            if (isBlueName) {
+                console.log('Blue name detected, skipping custom styles');
+                return;
+            }
 
+            let playerId = null;
             if (anchor) {
                 const match = anchor.href.match(/XID=(\d+)/);
                 if (match) playerId = match[1];
@@ -397,7 +401,6 @@
         const config = getConfig();
         MY_PLAYER_ID = config.playerId || MY_PLAYER_ID;
 
-        // Prompt for player ID if unset
         if (!config.playerId || config.playerId === 'USER ID #') {
             const id = prompt('Please enter your Torn player ID:', MY_PLAYER_ID);
             if (id && id.trim() !== 'USER ID #') {
