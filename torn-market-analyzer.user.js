@@ -116,38 +116,26 @@
 
         // Item Analyzer tab
         const itemContent = tabContents['Item Analyzer'];
-        const itemInput = document.createElement('input');
-        itemInput.type = 'text';
-        itemInput.placeholder = 'Item ID or Name';
-        itemInput.style.cssText = 'width: 100%; padding: 8px; margin-bottom: 10px;';
-
-        const analyzeItemBtn = document.createElement('button');
-        analyzeItemBtn.textContent = 'Analyze Item';
-        analyzeItemBtn.onclick = () => analyzeItem(itemInput.value);
+        const scanItemsBtn = document.createElement('button');
+        scanItemsBtn.textContent = 'Scan Popular Items for Profits';
+        scanItemsBtn.onclick = () => scanProfitableItems();
 
         const itemResultsDiv = document.createElement('div');
         itemResultsDiv.id = 'item-analyzer-results';
 
-        itemContent.appendChild(itemInput);
-        itemContent.appendChild(analyzeItemBtn);
+        itemContent.appendChild(scanItemsBtn);
         itemContent.appendChild(itemResultsDiv);
 
         // Stock Analyzer tab
         const stockContent = tabContents['Stock Analyzer'];
-        const stockInput = document.createElement('input');
-        stockInput.type = 'text';
-        stockInput.placeholder = 'Stock ID';
-        stockInput.style.cssText = 'width: 100%; padding: 8px; margin-bottom: 10px;';
-
-        const analyzeStockBtn = document.createElement('button');
-        analyzeStockBtn.textContent = 'Analyze Stock';
-        analyzeStockBtn.onclick = () => analyzeStock(stockInput.value);
+        const scanStocksBtn = document.createElement('button');
+        scanStocksBtn.textContent = 'Scan Stocks for Profits';
+        scanStocksBtn.onclick = () => scanProfitableStocks();
 
         const stockResultsDiv = document.createElement('div');
         stockResultsDiv.id = 'stock-analyzer-results';
 
-        stockContent.appendChild(stockInput);
-        stockContent.appendChild(analyzeStockBtn);
+        stockContent.appendChild(scanStocksBtn);
         stockContent.appendChild(stockResultsDiv);
 
         // Main toggle button
@@ -249,6 +237,107 @@
         }).catch(error => {
             resultsDiv.innerHTML = `Error: ${error}`;
         });
+    }
+
+    // Scan profitable stocks
+    async function scanProfitableStocks() {
+        const resultsDiv = document.getElementById('stock-analyzer-results');
+        resultsDiv.innerHTML = 'Scanning stocks...';
+
+        try {
+            const apiKey = GM_getValue('torn_api_key', '');
+            if (!apiKey) {
+                resultsDiv.innerHTML = 'API Key not set';
+                return;
+            }
+
+            const response = await new Promise((resolve, reject) => {
+                GM_xmlhttpRequest({
+                    method: 'GET',
+                    url: `${BASE_URL}/torn/?selections=stocks&key=${apiKey}`,
+                    onload: (response) => resolve(response),
+                    onerror: () => reject('API request failed')
+                });
+            });
+
+            const data = JSON.parse(response.responseText);
+            if (!data.stocks) {
+                resultsDiv.innerHTML = 'No stock data available';
+                return;
+            }
+
+            const stocks = Object.values(data.stocks);
+            // Filter stocks with available shares > 0, sort by current_price ascending (potential buys)
+            const profitableStocks = stocks
+                .filter(stock => stock.available_shares > 0)
+                .sort((a, b) => a.current_price - b.current_price)
+                .slice(0, 20); // Top 20 cheapest with available shares
+
+            if (profitableStocks.length === 0) {
+                resultsDiv.innerHTML = 'No profitable stocks found.';
+                return;
+            }
+
+            let html = '<h3>Potentially Profitable Stocks (Low Price, Available Shares)</h3><table style="width:100%; border-collapse:collapse;"><tr><th style="border:1px solid #ddd; padding:8px;">Stock</th><th style="border:1px solid #ddd; padding:8px;">Current Price</th><th style="border:1px solid #ddd; padding:8px;">Available Shares</th><th style="border:1px solid #ddd; padding:8px;">Market Cap</th></tr>';
+            profitableStocks.forEach(stock => {
+                html += `<tr><td style="border:1px solid #ddd; padding:8px;">${stock.name}</td><td style="border:1px solid #ddd; padding:8px;">$${stock.current_price}</td><td style="border:1px solid #ddd; padding:8px;">${stock.available_shares.toLocaleString()}</td><td style="border:1px solid #ddd; padding:8px;">$${stock.market_cap.toLocaleString()}</td></tr>`;
+            });
+            html += '</table>';
+            resultsDiv.innerHTML = html;
+        } catch (error) {
+            resultsDiv.innerHTML = `Error: ${error}`;
+        }
+    }
+
+    // Scan profitable items
+    async function scanProfitableItems() {
+        const resultsDiv = document.getElementById('item-analyzer-results');
+        resultsDiv.innerHTML = 'Scanning popular items...';
+
+        // List of popular item IDs (can be expanded)
+        const popularItems = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]; // Morphine, FAK, etc.
+
+        const profitableItems = [];
+
+        for (const itemId of popularItems) {
+            try {
+                const data = await fetchItemData(itemId);
+                if (data.items && data.items[itemId]) {
+                    const item = data.items[itemId];
+                    const prices = item.marketdata ? item.marketdata.prices : [];
+                    if (prices.length > 0) {
+                        const currentPrice = prices[prices.length - 1];
+                        const avgPrice = prices.reduce((a, b) => a + b, 0) / prices.length;
+                        const undervalued = currentPrice < avgPrice * 0.95;
+                        if (undervalued) {
+                            profitableItems.push({
+                                name: item.name,
+                                currentPrice,
+                                avgPrice,
+                                potentialProfit: avgPrice - currentPrice
+                            });
+                        }
+                    }
+                }
+            } catch (e) {
+                console.log(`Error fetching item ${itemId}: ${e}`);
+            }
+        }
+
+        // Sort by potential profit descending
+        profitableItems.sort((a, b) => b.potentialProfit - a.potentialProfit);
+
+        if (profitableItems.length === 0) {
+            resultsDiv.innerHTML = 'No profitable items found in popular list.';
+            return;
+        }
+
+        let html = '<h3>Potentially Profitable Items</h3><table style="width:100%; border-collapse:collapse;"><tr><th style="border:1px solid #ddd; padding:8px;">Item</th><th style="border:1px solid #ddd; padding:8px;">Current Price</th><th style="border:1px solid #ddd; padding:8px;">Avg Price</th><th style="border:1px solid #ddd; padding:8px;">Potential Profit</th></tr>';
+        profitableItems.forEach(item => {
+            html += `<tr><td style="border:1px solid #ddd; padding:8px;">${item.name}</td><td style="border:1px solid #ddd; padding:8px;">$${item.currentPrice.toLocaleString()}</td><td style="border:1px solid #ddd; padding:8px;">$${item.avgPrice.toFixed(2)}</td><td style="border:1px solid #ddd; padding:8px;">$${item.potentialProfit.toFixed(2)}</td></tr>`;
+        });
+        html += '</table>';
+        resultsDiv.innerHTML = html;
     }
 
     // Analyze item trends
