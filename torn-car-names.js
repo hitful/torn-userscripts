@@ -3,7 +3,7 @@
 // @namespace    https://github.com/hitful
 // @version      1.0
 // @description  Changes the current Torn car names back to their previous real-world names.
-// @author       bape
+// @author       hit
 // @match        https://www.torn.com/*
 // @grant        none
 // @downloadURL https://raw.githubusercontent.com/hitful/torn-userscripts/refs/heads/main/torn-car-names.js
