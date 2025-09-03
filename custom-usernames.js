@@ -3,7 +3,7 @@
 // @namespace    https://github.com/hitful
 // @version      1.1
 // @description  Custom username font and custom color outlines for player names on honor bars, with compatibility for Torn's blue names. No API key required. Set your player ID manually for full reliability.
-// @author       bape
+// @author       hit
 // @match        https://www.torn.com/*
 // @grant        none
 // @downloadURL https://raw.githubusercontent.com/hitful/torn-userscripts/refs/heads/main/custom-usernames.js
