@@ -30,6 +30,8 @@
     };
 
     const LINKS = {
+        forumThread:
+            'https://github.com/hitful',
         factionProfile: 'https://www.torn.com/factions.php?step=profile&ID=48572',
         itemPage: 'https://www.torn.com/item.php#',
         referralProfile: 'https://www.torn.com/profiles.php?XID=3401739',
@@ -1311,7 +1313,7 @@
         communityLabel.className = 'WM-panel-small';
         communityLabel.textContent = 'Links:';
 
-        const forumBtn = createButton('Forum Thread');
+        const forumBtn = createButton('GitHub');
         const applyBtn = createButton('Apply to Faction');
         const donateBtn = createButton('Donate Xanax');
         const refBtn = createButton('Referral Profile');
