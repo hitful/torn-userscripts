@@ -261,6 +261,64 @@
         return '#bdc3c7';
     }
 
+    function formatLifeText(snap) {
+        if (!snap) return '';
+        const cur = Number(snap.lifeCurrent);
+        const max = Number(snap.lifeMax);
+        if (!Number.isFinite(cur) || !Number.isFinite(max) || max <= 0) return '';
+        return Math.floor(cur) + '/' + Math.floor(max);
+    }
+
+    function normalizeEstimateValue(value) {
+        if (value == null) return '';
+        if (typeof value === 'number' && Number.isFinite(value)) {
+            return String(Math.round(value));
+        }
+        if (typeof value === 'string') {
+            const trimmed = value.trim();
+            return trimmed;
+        }
+        if (typeof value === 'object') {
+            const candidates = [
+                value.estimate,
+                value.est,
+                value.battleStats,
+                value.battlestats,
+                value.value,
+                value.text,
+                value.display
+            ];
+            for (const c of candidates) {
+                const normalized = normalizeEstimateValue(c);
+                if (normalized) return normalized;
+            }
+        }
+        return '';
+    }
+
+    function getExternalScoutEstimate(xid) {
+        const hooks = [
+            window.__wmGetScoutEstimate,
+            window.FFScouter && window.FFScouter.getEstimate,
+            window.ffScouter && window.ffScouter.getEstimate,
+            window.TornTools && window.TornTools.getBattleStatsEstimate,
+            window.TornTools && window.TornTools.scouter && window.TornTools.scouter.getEstimate
+        ];
+
+        for (const hook of hooks) {
+            if (typeof hook !== 'function') continue;
+            try {
+                const value = hook(String(xid));
+                const normalized = normalizeEstimateValue(value);
+                if (normalized) return normalized;
+            } catch (e) {
+                // Ignore external hook failures.
+            }
+        }
+
+        return '';
+    }
+
     // ---------- Utility: storage ----------
 
     function getApiKey() {
@@ -501,6 +559,7 @@
     function updateTravelSnapshotFromApi(xid, data) {
         const statusObj = data.status || {};
         const travelObj = data.travel || {};
+        const lifeObj = data.life || {};
 
         const name = data.name || '(unknown)';
 
@@ -514,10 +573,18 @@
         let destination = null;
         let timeLeft = null;
         let traveling = false;
+        let lifeCurrent = null;
+        let lifeMax = null;
 
         if (travelObj && typeof travelObj === 'object') {
             if (travelObj.destination) destination = travelObj.destination;
             if (typeof travelObj.time_left === 'number') timeLeft = travelObj.time_left;
+        }
+
+        if (lifeObj && typeof lifeObj === 'object') {
+            if (typeof lifeObj.current === 'number') lifeCurrent = lifeObj.current;
+            if (typeof lifeObj.maximum === 'number') lifeMax = lifeObj.maximum;
+            if (typeof lifeObj.max === 'number') lifeMax = lifeObj.max;
         }
 
         if (/travel/i.test(state) || /travel/i.test(desc)) {
@@ -549,6 +616,8 @@
             destination,
             traveling,
             timeLeft,
+            lifeCurrent,
+            lifeMax,
             description: desc,
             details
         };
@@ -818,11 +887,28 @@
         const url =
             'https://api.torn.com/user/' +
             encodeURIComponent(xid) +
-            '?selections=basic&key=' +
+            '?selections=basic,profile&key=' +
             encodeURIComponent(apiKey);
 
-        const resp = await fetch(url, signal ? { signal } : undefined);
-        return resp.json();
+        let lastError = null;
+        for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+                const resp = await fetch(url, signal ? { signal } : undefined);
+                return resp.json();
+            } catch (e) {
+                if (e && e.name === 'AbortError') {
+                    throw e;
+                }
+                lastError = e;
+
+                // Brief backoff reduces burst failures on transient network/API edges.
+                if (attempt < 2) {
+                    await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
+                }
+            }
+        }
+
+        throw lastError || new Error('Network/fetch error');
     }
 
     async function fetchTargetsWithConcurrency(ids, apiKey, options, onProgress) {
@@ -900,6 +986,10 @@
     function getCityKeyForSnap(snap) {
         const state = String(snap.state || '');
         const where = String(snap.where || '');
+
+        if (/error/i.test(state)) {
+            return 'Errors';
+        }
 
         const isTravelling =
             !!snap.traveling ||
@@ -1931,6 +2021,8 @@
                 const where = snap.where || '';
                 const desc = snap.description || '';
                 const details = snap.details || '';
+                const lifeText = formatLifeText(snap);
+                const scoutEstimate = getExternalScoutEstimate(snap.xid);
                 const sameCity =
                     cityKey === myCity ||
                     (where && myCity && where.indexOf(myCity) !== -1);
@@ -1980,10 +2072,21 @@
                     state;
 
                 const extra = document.createElement('span');
-                extra.textContent =
-                    '  |  ' +
-                    where +
-                    (desc || details ? '  |  ' + (desc || '') + (details ? ' | ' + details : '') : '');
+                const detailParts = [where];
+                if (/okay/i.test(state) && lifeText) {
+                    detailParts.push('Life ' + lifeText);
+                } else {
+                    if (desc && desc.toLowerCase() !== state.toLowerCase()) {
+                        detailParts.push(desc);
+                    }
+                    if (details) {
+                        detailParts.push(details);
+                    }
+                }
+                if (scoutEstimate) {
+                    detailParts.push('BS est ' + scoutEstimate);
+                }
+                extra.textContent = '  |  ' + detailParts.join(' | ');
 
                 row.appendChild(link);
                 row.appendChild(extra);
