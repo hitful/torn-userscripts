@@ -898,7 +898,23 @@
     }
 
     function getCityKeyForSnap(snap) {
-        if (snap.destination) return snap.destination;
+        const state = String(snap.state || '');
+        const where = String(snap.where || '');
+
+        const isTravelling =
+            !!snap.traveling ||
+            /travel|flying/i.test(state) ||
+            /flying to/i.test(where);
+
+        if (isTravelling) return 'Travelling';
+
+        if (
+            snap.destination ||
+            /abroad/i.test(where) ||
+            /abroad/i.test(state)
+        ) {
+            return 'Abroad';
+        }
 
         if (/hospital/i.test(snap.where) || /hospital/i.test(snap.state)) {
             return 'Hospital (Torn)';
@@ -940,7 +956,7 @@
         });
 
         const title = document.createElement('div');
-        title.textContent = 'WM – War Board';
+        title.textContent = 'WM - Dashboard';
         title.className = 'WM-panel-title';
 
         const headerInfo = document.createElement('div');
@@ -1094,11 +1110,11 @@
             const key = getApiKey();
             const settings = getSettings();
             if (!key) {
-                apiStatus.textContent = 'No key set.';
+                apiStatus.textContent = 'Not set.';
                 apiStatus.style.color = '#e74c3c';
             } else {
                 apiStatus.textContent =
-                    'Key present. C=' + settings.concurrency +
+                    'Set. C=' + settings.concurrency +
                     ' Cache=' + settings.cacheTtlSec + 's Auto=' + settings.autoRefreshSec + 's' +
                     ' War=' + (settings.autoWarImport ? 'on' : 'off') + '/' + settings.warCheckSec + 's' +
                     ' Neon=' + settings.neonColor;
@@ -1880,7 +1896,8 @@
         let shownCount = 0;
         let localOkayCount = 0;
         let hospOrJailCount = 0;
-        let travelCount = 0;
+        let travellingCount = 0;
+        let abroadCount = 0;
         let errorCount = 0;
 
         cityKeys.forEach((cityKey) => {
@@ -1918,6 +1935,11 @@
                     cityKey === myCity ||
                     (where && myCity && where.indexOf(myCity) !== -1);
                 const flags = getSnapFlags(state, where, sameCity);
+                const isTravelling =
+                    !!snap.traveling || /travel|flying/i.test(state) || /flying to/i.test(where);
+                const isAbroad =
+                    !isTravelling &&
+                    (Boolean(snap.destination) || /abroad/i.test(where) || /abroad/i.test(state));
 
                 if (!includeByFilter(snap, cityKey)) {
                     return;
@@ -1927,7 +1949,8 @@
                 shownCount++;
                 if (flags.isLocalOkay) localOkayCount++;
                 if (flags.isHospOrJail) hospOrJailCount++;
-                if (flags.isTravel) travelCount++;
+                if (isTravelling) travellingCount++;
+                if (isAbroad) abroadCount++;
                 if (flags.isError) errorCount++;
 
                 // Color rule:
@@ -2007,7 +2030,8 @@
                 'Summary: showing ' + shownCount + ' / ' + entries.length +
                 ' | local+okay: ' + localOkayCount +
                 ' | hospital/jail: ' + hospOrJailCount +
-                ' | travel: ' + travelCount +
+                ' | travelling: ' + travellingCount +
+                ' | abroad: ' + abroadCount +
                 ' | errors: ' + errorCount +
                 ' | filter: ' + filterMode + '.';
         }
