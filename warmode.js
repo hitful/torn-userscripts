@@ -30,11 +30,9 @@
     };
 
     const LINKS = {
-        forumThread:
-            'https://www.torn.com/forums.php#/p=threads&f=67&t=16518244&b=0&a=0&start=0&to=26658692',
-        factionProfile: 'https://www.torn.com/factions.php?step=profile&ID=51067',
-        itemPage: 'https://www.torn.com/item.php',
-        referralProfile: 'https://www.torn.com/3401739',
+        factionProfile: 'https://www.torn.com/factions.php?step=profile&ID=48572',
+        itemPage: 'https://www.torn.com/item.php#',
+        referralProfile: 'https://www.torn.com/profiles.php?XID=3401739',
         donateXid: '3401739'
     };
 
@@ -47,6 +45,17 @@
     let lastKnownMyCity = 'Unknown';
     let autoRefreshTimerId = null;
     let lastWarCheckAt = 0;
+    const scoutEstimateMemo = {};
+    let requestPacerCursorMs = 0;
+    const REQUEST_MIN_SPACING_MS = 650;
+
+    class RateLimitError extends Error {
+        constructor(message, retryAfterMs) {
+            super(message || 'Too many requests');
+            this.name = 'RateLimitError';
+            this.retryAfterMs = Number.isFinite(retryAfterMs) ? retryAfterMs : 0;
+        }
+    }
 
     // Simple helper to strip any HTML tags from Torn's status/details text
     function stripHtmlTags(str) {
@@ -296,26 +305,111 @@
         return '';
     }
 
+    function extractEstimateFromContainer(container, xid) {
+        if (!container || typeof container !== 'object') return '';
+
+        const directKeys = [
+            String(xid),
+            'xid:' + String(xid),
+            'id:' + String(xid),
+            'user:' + String(xid),
+            'player:' + String(xid),
+            'user' + String(xid),
+            'id_' + String(xid)
+        ];
+
+        for (const k of directKeys) {
+            if (Object.prototype.hasOwnProperty.call(container, k)) {
+                const normalized = normalizeEstimateValue(container[k]);
+                if (normalized) return normalized;
+            }
+        }
+
+        if (Array.isArray(container)) {
+            for (const item of container) {
+                if (!item || typeof item !== 'object') continue;
+                const itemXid = String(item.xid || item.id || item.user_id || item.player_id || '');
+                if (itemXid && itemXid === String(xid)) {
+                    const normalized = normalizeEstimateValue(item);
+                    if (normalized) return normalized;
+                }
+            }
+            return '';
+        }
+
+        const nestedKeys = [
+            'estimates',
+            'estimateMap',
+            'scouterMap',
+            'scoutData',
+            'targets',
+            'players',
+            'users'
+        ];
+
+        for (const nk of nestedKeys) {
+            if (!Object.prototype.hasOwnProperty.call(container, nk)) continue;
+            const normalized = extractEstimateFromContainer(container[nk], xid);
+            if (normalized) return normalized;
+        }
+
+        return '';
+    }
+
     function getExternalScoutEstimate(xid) {
+        const xidStr = String(xid);
+        if (Object.prototype.hasOwnProperty.call(scoutEstimateMemo, xidStr)) {
+            return scoutEstimateMemo[xidStr];
+        }
+
         const hooks = [
             window.__wmGetScoutEstimate,
             window.FFScouter && window.FFScouter.getEstimate,
+            window.FFScouter && window.FFScouter.get,
+            window.FFSCOUTER && window.FFSCOUTER.getEstimate,
+            window.FairFightScouter && window.FairFightScouter.getEstimate,
             window.ffScouter && window.ffScouter.getEstimate,
+            window.ffScouter && window.ffScouter.get,
             window.TornTools && window.TornTools.getBattleStatsEstimate,
-            window.TornTools && window.TornTools.scouter && window.TornTools.scouter.getEstimate
+            window.TornTools && window.TornTools.scouter && window.TornTools.scouter.getEstimate,
+            window.TornTools && window.TornTools.scouter && window.TornTools.scouter.get
         ];
 
         for (const hook of hooks) {
             if (typeof hook !== 'function') continue;
             try {
-                const value = hook(String(xid));
+                const value = hook(xidStr);
                 const normalized = normalizeEstimateValue(value);
-                if (normalized) return normalized;
+                if (normalized) {
+                    scoutEstimateMemo[xidStr] = normalized;
+                    return normalized;
+                }
             } catch (e) {
                 // Ignore external hook failures.
             }
         }
 
+        const roots = [
+            window.__wmScoutEstimates,
+            window.__wmScouterCache,
+            window.FFScouter,
+            window.FFSCOUTER,
+            window.ffScouter,
+            window.FairFightScouter,
+            window.TornTools,
+            window.TornTools && window.TornTools.scouter,
+            window.TornTools && window.TornTools.state
+        ];
+
+        for (const root of roots) {
+            const normalized = extractEstimateFromContainer(root, xidStr);
+            if (normalized) {
+                scoutEstimateMemo[xidStr] = normalized;
+                return normalized;
+            }
+        }
+
+        scoutEstimateMemo[xidStr] = '';
         return '';
     }
 
@@ -512,6 +606,28 @@
         const win = window.open(url, '_blank');
         if (win) {
             win.opener = null;
+        }
+    }
+
+    function sleep(ms) {
+        const waitMs = Math.max(0, Number(ms) || 0);
+        return new Promise((resolve) => setTimeout(resolve, waitMs));
+    }
+
+    async function waitForRequestSlot(signal) {
+        const now = Date.now();
+        const slot = Math.max(now, requestPacerCursorMs);
+        requestPacerCursorMs = slot + REQUEST_MIN_SPACING_MS;
+
+        const waitMs = slot - now;
+        if (waitMs <= 0) return;
+
+        if (signal && signal.aborted) {
+            throw new DOMException('Aborted', 'AbortError');
+        }
+        await sleep(waitMs);
+        if (signal && signal.aborted) {
+            throw new DOMException('Aborted', 'AbortError');
         }
     }
 
@@ -891,19 +1007,42 @@
             encodeURIComponent(apiKey);
 
         let lastError = null;
-        for (let attempt = 0; attempt < 3; attempt++) {
+        for (let attempt = 0; attempt < 5; attempt++) {
             try {
+                await waitForRequestSlot(signal);
                 const resp = await fetch(url, signal ? { signal } : undefined);
-                return resp.json();
+
+                if (resp.status === 429) {
+                    const retryAfterRaw = resp.headers.get('Retry-After');
+                    const retryAfterSec = Number(retryAfterRaw);
+                    const retryAfterMs = Number.isFinite(retryAfterSec)
+                        ? Math.max(500, Math.floor(retryAfterSec * 1000))
+                        : 1500;
+                    throw new RateLimitError('Too many requests (HTTP 429)', retryAfterMs);
+                }
+
+                const data = await resp.json();
+                if (data && data.error) {
+                    const errText = String(data.error.error || 'API error');
+                    if (/too many requests|rate limit|try again/i.test(errText)) {
+                        throw new RateLimitError(errText, 1500 + attempt * 600);
+                    }
+                }
+
+                return data;
             } catch (e) {
                 if (e && e.name === 'AbortError') {
                     throw e;
                 }
                 lastError = e;
 
-                // Brief backoff reduces burst failures on transient network/API edges.
-                if (attempt < 2) {
-                    await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
+                if (attempt < 4) {
+                    if (e && e.name === 'RateLimitError') {
+                        await sleep((e.retryAfterMs || 0) + 250 * attempt);
+                    } else {
+                        // Brief backoff reduces burst failures on transient network/API edges.
+                        await sleep(350 * (attempt + 1));
+                    }
                 }
             }
         }
@@ -956,7 +1095,11 @@
                     if (e && e.name === 'AbortError') {
                         return;
                     }
-                    const errorObj = { error: 'Network/fetch error' };
+                    const isRateLimit =
+                        e && (e.name === 'RateLimitError' || /too many requests|rate limit/i.test(String(e.message || '')));
+                    const errorObj = {
+                        error: isRateLimit ? 'Too many requests (rate limited)' : 'Network/fetch error'
+                    };
                     setCachedTargetData(xid, errorObj);
                     errorCount++;
                     fromNetworkCount++;
@@ -2032,6 +2175,7 @@
                 const isAbroad =
                     !isTravelling &&
                     (Boolean(snap.destination) || /abroad/i.test(where) || /abroad/i.test(state));
+                const isOkay = /okay/i.test(state);
 
                 if (!includeByFilter(snap, cityKey)) {
                     return;
@@ -2064,32 +2208,65 @@
                         'https://www.torn.com/profiles.php?XID=' + snap.xid;
                 }
                 link.target = '_blank';
+                const hideStateInTitle = isOkay || flags.isHospOrJail || isTravelling || isAbroad;
                 link.textContent =
                     (snap.name || '(unknown)') +
                     ' [' +
                     snap.xid +
-                    '] – ' +
-                    state;
+                    ']' +
+                    (hideStateInTitle ? '' : ' – ' + state);
 
                 const extra = document.createElement('span');
-                const detailParts = [where];
-                if (/okay/i.test(state) && lifeText) {
-                    detailParts.push('Life ' + lifeText);
-                } else {
+                const detailParts = [];
+                const pushDetail = (value) => {
+                    const v = String(value || '').trim();
+                    if (!v) return;
+                    const already = detailParts.some((p) => p.toLowerCase() === v.toLowerCase());
+                    if (!already) detailParts.push(v);
+                };
+
+                if (isOkay) {
+                    if (lifeText) {
+                        pushDetail('Life ' + lifeText);
+                    }
+                } else if (flags.isHospOrJail) {
                     if (desc && desc.toLowerCase() !== state.toLowerCase()) {
-                        detailParts.push(desc);
+                        pushDetail(desc);
                     }
                     if (details) {
-                        detailParts.push(details);
+                        pushDetail(details);
+                    }
+                } else if (isTravelling || isAbroad) {
+                    if (desc && desc.toLowerCase() !== state.toLowerCase()) {
+                        pushDetail(desc);
+                    }
+                    if (details) {
+                        pushDetail(details);
+                    }
+                } else {
+                    pushDetail(where);
+                    if (desc && desc.toLowerCase() !== state.toLowerCase()) {
+                        pushDetail(desc);
+                    }
+                    if (details) {
+                        pushDetail(details);
                     }
                 }
+
                 if (scoutEstimate) {
-                    detailParts.push('BS est ' + scoutEstimate);
+                    pushDetail('BS est ' + scoutEstimate);
+                } else if (isOkay) {
+                    pushDetail('BS est n/a');
                 }
-                extra.textContent = '  |  ' + detailParts.join(' | ');
+
+                if (detailParts.length) {
+                    extra.textContent = '  |  ' + detailParts.join(' | ');
+                }
 
                 row.appendChild(link);
-                row.appendChild(extra);
+                if (detailParts.length) {
+                    row.appendChild(extra);
+                }
 
                 targetList.appendChild(row);
             });
