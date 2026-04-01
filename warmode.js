@@ -377,7 +377,10 @@
             window.ffScouter && window.ffScouter.get,
             window.TornTools && window.TornTools.getBattleStatsEstimate,
             window.TornTools && window.TornTools.scouter && window.TornTools.scouter.getEstimate,
-            window.TornTools && window.TornTools.scouter && window.TornTools.scouter.get
+            window.TornTools && window.TornTools.scouter && window.TornTools.scouter.get,
+            window.tornTools && window.tornTools.getBattleStatsEstimate,
+            window.tornTools && window.tornTools.scouter && window.tornTools.scouter.getEstimate,
+            window.tornTools && window.tornTools.scouter && window.tornTools.scouter.get
         ];
 
         for (const hook of hooks) {
@@ -403,7 +406,10 @@
             window.FairFightScouter,
             window.TornTools,
             window.TornTools && window.TornTools.scouter,
-            window.TornTools && window.TornTools.state
+            window.TornTools && window.TornTools.state,
+            window.tornTools,
+            window.tornTools && window.tornTools.scouter,
+            window.tornTools && window.tornTools.state
         ];
 
         for (const root of roots) {
@@ -414,7 +420,6 @@
             }
         }
 
-        scoutEstimateMemo[xidStr] = '';
         return '';
     }
 
@@ -1030,7 +1035,7 @@
         const url =
             'https://api.torn.com/user/' +
             encodeURIComponent(xid) +
-            '?selections=basic&key=' +
+            '?selections=basic,profile&key=' +
             encodeURIComponent(apiKey);
 
         let lastError = null;
@@ -2318,11 +2323,9 @@
 
             if (Object.prototype.hasOwnProperty.call(expandedState, cityKey)) {
                 targetList.style.display = expandedState[cityKey] ? 'block' : 'none';
-            } else if (cityKey === myCity || /Hospital/.test(cityKey)) {
-                // Default: open YOUR city and Hospital
-                targetList.style.display = 'block';
             } else {
-                targetList.style.display = 'none';
+                // Default: open any non-empty group.
+                targetList.style.display = 'block';
             }
 
             container.appendChild(header);
