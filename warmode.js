@@ -2341,7 +2341,7 @@
 
         const WMBtn = document.createElement('button');
         WMBtn.id = 'WM-button-main';
-        WMBtn.textContent = 'WM';
+        WMBtn.textContent = '<3';
         WMBtn.className = 'WM-button-main';
         Object.assign(WMBtn.style, {
             padding: '10px 18px',
