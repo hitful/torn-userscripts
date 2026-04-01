@@ -7,8 +7,8 @@
 // @match        https://www.torn.com/*
 // @license      MIT
 // @grant        none
-// @downloadURL https://github.com/hitful/torn-userscripts/blob/main/warmode.js
-// @updateURL https://github.com/hitful/torn-userscripts/blob/main/warmode.js
+// @downloadURL  https://raw.githubusercontent.com/hitful/torn-userscripts/main/warmode.js
+// @updateURL    https://raw.githubusercontent.com/hitful/torn-userscripts/main/warmode.js
 // ==/UserScript==
 
 (function () {
@@ -49,7 +49,10 @@
     let lastWarCheckAt = 0;
     const scoutEstimateMemo = {};
     let requestPacerCursorMs = 0;
-    const REQUEST_MIN_SPACING_MS = 650;
+    const REQUEST_MIN_SPACING_BASE_MS = 500;
+    const REQUEST_MIN_SPACING_MAX_MS = 1600;
+    const REQUEST_PACER_MAX_LEAD_MS = 2500;
+    let requestMinSpacingMs = REQUEST_MIN_SPACING_BASE_MS;
 
     class RateLimitError extends Error {
         constructor(message, retryAfterMs) {
@@ -616,10 +619,32 @@
         return new Promise((resolve) => setTimeout(resolve, waitMs));
     }
 
+    function recordRequestSuccess() {
+        requestMinSpacingMs = Math.max(
+            REQUEST_MIN_SPACING_BASE_MS,
+            requestMinSpacingMs - 20
+        );
+    }
+
+    function recordRateLimitPressure(retryAfterMs) {
+        const suggestedSpacing = Number.isFinite(retryAfterMs)
+            ? Math.max(REQUEST_MIN_SPACING_BASE_MS, Math.floor(retryAfterMs / 2))
+            : REQUEST_MIN_SPACING_BASE_MS;
+
+        requestMinSpacingMs = Math.min(
+            REQUEST_MIN_SPACING_MAX_MS,
+            Math.max(requestMinSpacingMs + 140, suggestedSpacing)
+        );
+    }
+
     async function waitForRequestSlot(signal) {
         const now = Date.now();
+        if (requestPacerCursorMs - now > REQUEST_PACER_MAX_LEAD_MS) {
+            // Prevent stale queue debt from a previous refresh from delaying a new run.
+            requestPacerCursorMs = now;
+        }
         const slot = Math.max(now, requestPacerCursorMs);
-        requestPacerCursorMs = slot + REQUEST_MIN_SPACING_MS;
+        requestPacerCursorMs = slot + requestMinSpacingMs;
 
         const waitMs = slot - now;
         if (waitMs <= 0) return;
@@ -1005,7 +1030,7 @@
         const url =
             'https://api.torn.com/user/' +
             encodeURIComponent(xid) +
-            '?selections=basic,profile&key=' +
+            '?selections=basic&key=' +
             encodeURIComponent(apiKey);
 
         let lastError = null;
@@ -1031,6 +1056,8 @@
                     }
                 }
 
+                recordRequestSuccess();
+
                 return data;
             } catch (e) {
                 if (e && e.name === 'AbortError') {
@@ -1040,6 +1067,7 @@
 
                 if (attempt < 4) {
                     if (e && e.name === 'RateLimitError') {
+                        recordRateLimitPressure(e.retryAfterMs || 0);
                         await sleep((e.retryAfterMs || 0) + 250 * attempt);
                     } else {
                         // Brief backoff reduces burst failures on transient network/API edges.
@@ -1102,7 +1130,9 @@
                     const errorObj = {
                         error: isRateLimit ? 'Too many requests (rate limited)' : 'Network/fetch error'
                     };
-                    setCachedTargetData(xid, errorObj);
+                    if (isRateLimit) {
+                        recordRateLimitPressure(e.retryAfterMs || 0);
+                    }
                     errorCount++;
                     fromNetworkCount++;
                     setSnapshotError(xid, errorObj.error);
