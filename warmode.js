@@ -153,14 +153,14 @@
             box-shadow: 0 0 6px rgba(var(--wm-neon-rgb),0.4);
         }
         .WM-small-btn {
-            min-height: 30px;
-            padding: 6px 10px;
+            min-height: 24px;
+            padding: 3px 7px;
             border-radius: 6px;
             border: 1px solid rgba(var(--wm-neon-rgb),0.33);
             cursor: pointer;
             background: #001018;
             color: var(--wm-neon);
-            font-size: 11px;
+            font-size: 10px;
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 0.02em;
@@ -174,46 +174,80 @@
         .WM-control-section {
             display: flex;
             flex-direction: column;
-            gap: 6px;
-            padding: 8px 10px;
+            gap: 4px;
+            padding: 6px 8px;
             border-radius: 8px;
             border: 1px solid rgba(var(--wm-neon-rgb),0.14);
             background: rgba(0, 0, 0, 0.22);
         }
         .WM-control-section-title {
-            font-size: 10px;
+            font-size: 9px;
             font-weight: 700;
             letter-spacing: 0.12em;
             text-transform: uppercase;
             color: var(--wm-neon);
         }
         .WM-control-section-note {
-            font-size: 10px;
+            font-size: 9px;
             color: #95a5a6;
         }
         .WM-control-group {
             display: flex;
             flex-wrap: wrap;
-            gap: 6px;
+            gap: 4px;
         }
         .WM-controls-grid {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 8px;
+            gap: 6px;
             align-items: start;
         }
-        .WM-control-section--refresh,
-        .WM-control-section--filter,
-        .WM-control-section--links {
+        .WM-control-section--list {
+            grid-column: 1;
+        }
+        .WM-control-section--import {
+            grid-column: 2;
+        }
+        .WM-control-section--refresh {
             grid-column: 1 / -1;
         }
-        @media (max-width: 900px) {
+        .WM-top-links,
+        .WM-target-filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+            font-size: 10px;
+            color: #9fb0ba;
+        }
+        .WM-target-filters {
+            gap: 6px;
+            min-height: 16px;
+        }
+        .WM-text-link {
+            color: var(--wm-neon);
+            text-decoration: none;
+            border-bottom: 1px dotted rgba(var(--wm-neon-rgb),0.55);
+            padding-bottom: 1px;
+            cursor: pointer;
+            font-size: 10px;
+            line-height: 1.2;
+        }
+        .WM-text-link:hover {
+            color: #ecf0f1;
+            border-bottom-color: rgba(236,240,241,0.7);
+        }
+        .WM-text-link-active {
+            color: #2ecc71;
+            border-bottom-color: #2ecc71;
+        }
+        @media (max-width: 640px) {
             .WM-controls-grid {
                 grid-template-columns: 1fr;
             }
-            .WM-control-section--refresh,
-            .WM-control-section--filter,
-            .WM-control-section--links {
+            .WM-control-section--list,
+            .WM-control-section--import,
+            .WM-control-section--refresh {
                 grid-column: auto;
             }
         }
@@ -1201,7 +1235,53 @@
 
     function isWarActiveByText(statusText) {
         const s = String(statusText || '').toLowerCase();
-        return /active|ongoing|running|started|in progress/.test(s);
+        if (!s) return false;
+        if (/complete|completed|ended|finished|cease|truce|cancel/.test(s)) {
+            return false;
+        }
+        return /active|ongoing|running|started|in progress|in war|war/.test(s);
+    }
+
+    function getIdFromRecord(record) {
+        if (!record || typeof record !== 'object') return '';
+        const direct =
+            record.user_id ||
+            record.player_id ||
+            record.target_id ||
+            record.xid ||
+            record.id;
+        if (direct != null && /^\d+$/.test(String(direct))) {
+            return String(direct);
+        }
+        return '';
+    }
+
+    function isWarLikelyActive(war) {
+        if (!war || typeof war !== 'object') return false;
+
+        const status =
+            war.status ||
+            war.war_status ||
+            war.state ||
+            war.current_status ||
+            '';
+
+        if (status) {
+            return isWarActiveByText(status);
+        }
+
+        const nowSec = Math.floor(Date.now() / 1000);
+        const start = Number(
+            war.start || war.start_time || war.started || war.war_start || 0
+        );
+        const end = Number(
+            war.end || war.end_time || war.ends || war.war_end || 0
+        );
+
+        if (Number.isFinite(end) && end > 0 && end < nowSec) return false;
+        if (Number.isFinite(start) && start > 0 && start > nowSec) return false;
+
+        return true;
     }
 
     function getWarEntries(payload) {
@@ -1228,15 +1308,32 @@
             factionNode.roster,
             factionNode.targets,
             factionNode.users,
-            factionNode.players
+            factionNode.players,
+            factionNode.participants,
+            factionNode.combatants,
+            factionNode.fighters
         ];
 
         memberContainers.forEach((container) => {
             if (!container || typeof container !== 'object') return;
+
+            if (Array.isArray(container)) {
+                container.forEach((entry) => {
+                    const id = getIdFromRecord(entry);
+                    if (id) setOut.add(id);
+                });
+                return;
+            }
+
             Object.keys(container).forEach((k) => {
                 if (/^\d+$/.test(k)) {
                     setOut.add(String(k));
+                    return;
                 }
+
+                const entry = container[k];
+                const id = getIdFromRecord(entry);
+                if (id) setOut.add(id);
             });
         });
     }
@@ -1245,9 +1342,7 @@
         const ids = new Set();
 
         entries.forEach((war) => {
-            const status =
-                war.status || war.war_status || war.state || war.current_status || '';
-            if (!isWarActiveByText(status)) {
+            if (!isWarLikelyActive(war)) {
                 return;
             }
 
@@ -1271,10 +1366,23 @@
             const directContainers = [war.targets, war.enemy, war.enemies];
             directContainers.forEach((container) => {
                 if (!container || typeof container !== 'object') return;
+
+                if (Array.isArray(container)) {
+                    container.forEach((entry) => {
+                        const id = getIdFromRecord(entry);
+                        if (id) ids.add(id);
+                    });
+                    return;
+                }
+
                 Object.keys(container).forEach((k) => {
                     if (/^\d+$/.test(k)) {
                         ids.add(String(k));
+                        return;
                     }
+
+                    const id = getIdFromRecord(container[k]);
+                    if (id) ids.add(id);
                 });
             });
         });
@@ -1319,6 +1427,21 @@
 
         const enemyIds = extractEnemyTargetsFromWarEntries(entries, selfFactionId);
         if (!enemyIds.length) {
+            try {
+                const statuses = entries.map((war) =>
+                    String(
+                        war.status || war.war_status || war.state || war.current_status || '(none)'
+                    )
+                );
+                console.warn('[WM] War entries found but no enemy IDs extracted.', {
+                    selfFactionId,
+                    entryCount: entries.length,
+                    statuses,
+                    sampleWar: entries[0]
+                });
+            } catch (e) {
+                // Diagnostic logging only.
+            }
             return { checked: true, active: true, added: 0 };
         }
 
@@ -1629,6 +1752,23 @@
 
         appendChildren(apiRow, [apiLabel, apiStatus, apiBtn, settingsBtn]);
 
+        const topLinksRow = document.createElement('div');
+        topLinksRow.className = 'WM-top-links';
+
+        function createTextLink(label) {
+            const link = document.createElement('a');
+            link.href = '#';
+            link.className = 'WM-text-link';
+            link.textContent = label;
+            return link;
+        }
+
+        const forumLink = createTextLink('GitHub');
+        const applyLink = createTextLink('Apply to Faction');
+        const donateLink = createTextLink('Donate Xanax');
+        const refLink = createTextLink('Referral Profile');
+        appendChildren(topLinksRow, [forumLink, applyLink, donateLink, refLink]);
+
         // ----- Targets editor row -----
         const targetsInfo = document.createElement('div');
         targetsInfo.className = 'WM-panel-small';
@@ -1659,16 +1799,6 @@
             'Fetch statuses with pacing tuned to avoid Torn API bursts.',
             'refresh'
         );
-        const filterSection = createControlSection(
-            'Filter',
-            'Narrow the board to the group you care about.',
-            'filter'
-        );
-        const linksSection = createControlSection(
-            'Links',
-            'Quick access to the related Torn and project pages.',
-            'links'
-        );
 
         const copyBtn = createButton('Copy XIDs');
         const saveBtn = createButton('Save List');
@@ -1687,43 +1817,63 @@
         const closeBtn = createButton('Close');
         appendChildren(refreshSection.group, [refreshBtn, forceRefreshBtn, cancelBtn, closeBtn]);
 
-        const filterAllBtn = createButton('All');
-        const filterLocalBtn = createButton('Local + Okay');
-        const filterHospBtn = createButton('Hospital/Jail');
-        const filterTravelBtn = createButton('Travel/Abroad');
-        const filterErrorBtn = createButton('Errors');
-        appendChildren(filterSection.group, [
-            filterAllBtn,
-            filterLocalBtn,
-            filterHospBtn,
-            filterTravelBtn,
-            filterErrorBtn
-        ]);
-
-        const forumBtn = createButton('GitHub');
-        const applyBtn = createButton('Apply to Faction');
-        const donateBtn = createButton('Donate Xanax');
-        const refBtn = createButton('Referral Profile');
-        appendChildren(linksSection.group, [forumBtn, applyBtn, donateBtn, refBtn]);
-
         appendChildren(controlsStack, [
             listSection.section,
             importSection.section,
-            refreshSection.section,
-            filterSection.section,
-            linksSection.section
+            refreshSection.section
+        ]);
+
+        const targetFilterRow = document.createElement('div');
+        targetFilterRow.className = 'WM-target-filters';
+
+        const filterLabel = document.createElement('span');
+        filterLabel.textContent = 'Filter:';
+
+        const filterAllLink = createTextLink('All');
+        const filterLocalLink = createTextLink('Local + Okay');
+        const filterHospLink = createTextLink('Hospital/Jail');
+        const filterTravelLink = createTextLink('Travel/Abroad');
+        const filterErrorLink = createTextLink('Errors');
+
+        appendChildren(targetFilterRow, [
+            filterLabel,
+            filterAllLink,
+            filterLocalLink,
+            filterHospLink,
+            filterTravelLink,
+            filterErrorLink
         ]);
 
         // ----- Results area -----
         const results = document.createElement('div');
         results.className = 'WM-results';
 
-        body.appendChild(apiRow);
-        body.appendChild(targetsInfo);
-        body.appendChild(targetsTextarea);
-        body.appendChild(controlsStack);
-        body.appendChild(summaryLine);
-        body.appendChild(results);
+        const topControls = document.createElement('div');
+        Object.assign(topControls.style, {
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '6px'
+        });
+        topControls.appendChild(topLinksRow);
+        topControls.appendChild(apiRow);
+        topControls.appendChild(controlsStack);
+
+        const targetsArea = document.createElement('div');
+        Object.assign(targetsArea.style, {
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '6px',
+            flex: '1 1 auto',
+            minHeight: '0'
+        });
+        targetsArea.appendChild(targetsInfo);
+        targetsArea.appendChild(targetsTextarea);
+        targetsArea.appendChild(targetFilterRow);
+        targetsArea.appendChild(summaryLine);
+        targetsArea.appendChild(results);
+
+        body.appendChild(topControls);
+        body.appendChild(targetsArea);
 
         modal.appendChild(headerRow);
         modal.appendChild(statusLine);
@@ -1751,18 +1901,22 @@
         updateApiStatusText();
 
         function paintFilterButtons() {
-            const buttons = [
-                ['all', filterAllBtn],
-                ['local', filterLocalBtn],
-                ['hospital', filterHospBtn],
-                ['travel', filterTravelBtn],
-                ['error', filterErrorBtn]
+            const links = [
+                ['all', filterAllLink],
+                ['local', filterLocalLink],
+                ['hospital', filterHospLink],
+                ['travel', filterTravelLink],
+                ['error', filterErrorLink]
             ];
-            buttons.forEach(([mode, btn]) => {
+            links.forEach(([mode, link]) => {
                 const active = currentFilterMode === mode;
-                btn.style.borderColor = active ? '#2ecc71' : 'rgba(var(--wm-neon-rgb),0.33)';
-                btn.style.color = active ? '#2ecc71' : 'var(--wm-neon)';
+                link.classList.toggle('WM-text-link-active', active);
             });
+        }
+
+        function updateTargetsAreaUiState() {
+            const hasTargets = parseXidsFromText(targetsTextarea.value).length > 0;
+            targetFilterRow.style.display = hasTargets ? 'flex' : 'none';
         }
 
         function applyFilterMode(mode) {
@@ -1779,6 +1933,7 @@
         }
 
         paintFilterButtons();
+        updateTargetsAreaUiState();
 
         apiBtn.addEventListener('click', () => {
             clearAutoRefreshTimer();
@@ -1800,6 +1955,7 @@
             targetsTextarea.value = '';
             setTargetsText('');
             clearTargetCache();
+            updateTargetsAreaUiState();
             statusLine.textContent = 'Targets list cleared.';
             statusLine.style.color = '#f39c12';
         });
@@ -1808,9 +1964,14 @@
             setTargetsText(targetsTextarea.value);
             clearTargetCache();
             const ids = getTargetsArray();
+            updateTargetsAreaUiState();
             statusLine.textContent =
                 'Saved. Parsed ' + ids.length + ' unique target ID(s).';
             statusLine.style.color = '#2ecc71';
+        });
+
+        targetsTextarea.addEventListener('input', () => {
+            updateTargetsAreaUiState();
         });
 
         importBtn.addEventListener('click', async () => {
@@ -1855,6 +2016,7 @@
             targetsTextarea.value = combinedLines.join('\n');
             setTargetsText(targetsTextarea.value);
             clearTargetCache();
+            updateTargetsAreaUiState();
             const ids = getTargetsArray();
 
             statusLine.textContent =
@@ -1876,6 +2038,7 @@
             const result = await checkAndImportFactionWarTargets(targetsTextarea, statusLine, {
                 force: true
             });
+            updateTargetsAreaUiState();
 
             if (!result.active) {
                 statusLine.textContent =
@@ -1991,11 +2154,26 @@
             }
         });
 
-        filterAllBtn.addEventListener('click', () => applyFilterMode('all'));
-        filterLocalBtn.addEventListener('click', () => applyFilterMode('local'));
-        filterHospBtn.addEventListener('click', () => applyFilterMode('hospital'));
-        filterTravelBtn.addEventListener('click', () => applyFilterMode('travel'));
-        filterErrorBtn.addEventListener('click', () => applyFilterMode('error'));
+        filterAllLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            applyFilterMode('all');
+        });
+        filterLocalLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            applyFilterMode('local');
+        });
+        filterHospLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            applyFilterMode('hospital');
+        });
+        filterTravelLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            applyFilterMode('travel');
+        });
+        filterErrorLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            applyFilterMode('error');
+        });
 
         configureAutoRefresh();
 
@@ -2007,15 +2185,18 @@
 
         // --- Community buttons ---
 
-        forumBtn.addEventListener('click', () => {
+        forumLink.addEventListener('click', (e) => {
+            e.preventDefault();
             safeOpen(LINKS.forumThread);
         });
 
-        applyBtn.addEventListener('click', () => {
+        applyLink.addEventListener('click', (e) => {
+            e.preventDefault();
             safeOpen(LINKS.factionProfile);
         });
 
-        donateBtn.addEventListener('click', () => {
+        donateLink.addEventListener('click', (e) => {
+            e.preventDefault();
             const xid = LINKS.donateXid;
             navigator.clipboard.writeText(xid)
                 .then(() => {
@@ -2036,7 +2217,8 @@
                 });
         });
 
-        refBtn.addEventListener('click', () => {
+        refLink.addEventListener('click', (e) => {
+            e.preventDefault();
             safeOpen(LINKS.referralProfile);
         });
 
