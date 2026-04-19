@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WarMode v1 by hit
 // @namespace    https://github.com/hitful/torn-userscripts/blob/main/warmode.js
-// @version      1.0
+// @version      1.1.0
 // @description  Activate War Mode with your own custom dashboard: import targets, auto-check status, group by location, and click to attack/profile from a single unified window. Ignores your own XID on import, includes forum/faction/donate/referral links.
 // @author       hit
 // @match        https://www.torn.com/*
@@ -48,11 +48,13 @@
     let autoRefreshTimerId = null;
     let lastWarCheckAt = 0;
     const scoutEstimateMemo = {};
+    let scoutEstimateRepaintTimerId = null;
     let requestPacerCursorMs = 0;
-    const REQUEST_MIN_SPACING_BASE_MS = 500;
-    const REQUEST_MIN_SPACING_MAX_MS = 1600;
-    const REQUEST_PACER_MAX_LEAD_MS = 2500;
+    const REQUEST_MIN_SPACING_BASE_MS = 600;
+    const REQUEST_MIN_SPACING_MAX_MS = 2200;
+    const REQUEST_PACER_MAX_LEAD_MS = 4000;
     let requestMinSpacingMs = REQUEST_MIN_SPACING_BASE_MS;
+    let requestCooldownUntilMs = 0;
 
     class RateLimitError extends Error {
         constructor(message, retryAfterMs) {
@@ -151,7 +153,8 @@
             box-shadow: 0 0 6px rgba(var(--wm-neon-rgb),0.4);
         }
         .WM-small-btn {
-            padding: 4px 8px;
+            min-height: 30px;
+            padding: 6px 10px;
             border-radius: 6px;
             border: 1px solid rgba(var(--wm-neon-rgb),0.33);
             cursor: pointer;
@@ -160,11 +163,38 @@
             font-size: 11px;
             font-weight: 600;
             text-transform: uppercase;
+            letter-spacing: 0.02em;
             box-shadow: 0 0 4px rgba(var(--wm-neon-rgb),0.4);
+            transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
         }
         .WM-small-btn-main {
             border: 2px solid var(--wm-neon);
             box-shadow: 0 0 8px rgba(var(--wm-neon-rgb),0.8);
+        }
+        .WM-control-section {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            padding: 8px 10px;
+            border-radius: 8px;
+            border: 1px solid rgba(var(--wm-neon-rgb),0.14);
+            background: rgba(0, 0, 0, 0.22);
+        }
+        .WM-control-section-title {
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--wm-neon);
+        }
+        .WM-control-section-note {
+            font-size: 10px;
+            color: #95a5a6;
+        }
+        .WM-control-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
         }
         .WM-targets-textarea {
             width: 100%;
@@ -252,17 +282,26 @@
         children.forEach((child) => parent.appendChild(child));
     }
 
-    function getSnapFlags(state, where, sameCity) {
+    function getSnapFlags(state, where, sameCity, isTravellingOverride, isAbroadOverride) {
         const isHospOrJail =
             /hospital|jail/i.test(state) || /hospital|jail/i.test(where);
         const isLocalOkay = sameCity && /okay/i.test(state);
-        const isTravel =
-            /travel|abroad/i.test(state) || /travel|abroad/i.test(where);
+        const isTravelling =
+            typeof isTravellingOverride === 'boolean'
+                ? isTravellingOverride
+                : (/travel|flying/i.test(state) || /travel|flying/i.test(where));
+        const isAbroad =
+            typeof isAbroadOverride === 'boolean'
+                ? isAbroadOverride
+                : (!isTravelling && (/abroad/i.test(state) || /abroad/i.test(where)));
+        const isTravel = isTravelling || isAbroad;
         const isError = /error/i.test(state);
 
         return {
             isHospOrJail,
             isLocalOkay,
+            isTravelling,
+            isAbroad,
             isTravel,
             isError
         };
@@ -271,8 +310,19 @@
     function getRowColor(flags) {
         if (flags.isHospOrJail) return '#e74c3c';
         if (flags.isLocalOkay) return '#2ecc71';
-        if (flags.isTravel) return '#f1c40f';
+        if (flags.isTravelling) return '#f1c40f';
+        if (flags.isAbroad) return '#f39c12';
         return '#bdc3c7';
+    }
+
+    function getCityBadgeColor(cityKey, myCity) {
+        if (cityKey === myCity) return '#2ecc71';
+        if (/hospital|jail/i.test(cityKey)) return '#e74c3c';
+        if (/travelling/i.test(cityKey)) return '#f1c40f';
+        if (/abroad/i.test(cityKey)) return '#f39c12';
+        if (/error/i.test(cityKey)) return '#ff7675';
+        if (/torn/i.test(cityKey)) return '#74b9ff';
+        return '#95a5a6';
     }
 
     function formatLifeText(snap) {
@@ -307,6 +357,201 @@
                 if (normalized) return normalized;
             }
         }
+        return '';
+    }
+
+    function extractEstimateFromText(text) {
+        const raw = String(text || ' ').replace(/\s+/g, ' ').trim();
+        if (!raw) return '';
+
+        const labeled = raw.match(
+            /(?:battle\s*stats?|bs|ff|fair\s*fight)\s*(?:estimate|est|score)?\s*[:\-~ ]+([<>~]?\s*[\d,.]+\s*[kmbt]?(?:\s*-\s*[<>~]?\s*[\d,.]+\s*[kmbt]?)?)/i
+        );
+        if (labeled && labeled[1]) {
+            return labeled[1].replace(/\s+/g, ' ').trim();
+        }
+
+        const ranged = raw.match(
+            /\b([<>~]?\s*[\d,.]+\s*[kmbt]?\s*-\s*[<>~]?\s*[\d,.]+\s*[kmbt]?)\b/i
+        );
+        if (ranged && ranged[1]) {
+            return ranged[1].replace(/\s+/g, ' ').trim();
+        }
+
+        // Some third-party tools emit compact values without labels (e.g. 2.3b).
+        const compact = raw.match(/\b([<>~]?\s*[\d,.]+\s*[kmbt])\b/i);
+        if (compact && compact[1]) {
+            return compact[1].replace(/\s+/g, ' ').trim();
+        }
+
+        return '';
+    }
+
+    function addScoutEstimate(xid, estimate) {
+        const xidStr = String(xid || '').trim();
+        if (!/^\d+$/.test(xidStr)) return;
+
+        const normalized = normalizeEstimateValue(estimate);
+        if (!normalized) return;
+
+        scoutEstimateMemo[xidStr] = normalized;
+    }
+
+    function initScoutEstimateBridge() {
+        if (window.__wmScoutBridgeInitialized) return;
+        window.__wmScoutBridgeInitialized = true;
+
+        // Public bridge: other userscripts/extensions can push estimates into WM.
+        window.WM_setScoutEstimate = function (xid, estimate) {
+            addScoutEstimate(xid, estimate);
+        };
+
+        window.WM_setScoutEstimates = function (mapOrList) {
+            if (!mapOrList) return;
+
+            if (Array.isArray(mapOrList)) {
+                mapOrList.forEach((item) => {
+                    if (!item || typeof item !== 'object') return;
+                    addScoutEstimate(
+                        item.xid || item.id || item.user_id || item.player_id,
+                        item.estimate || item.est || item.value || item.battleStats || item.battlestats
+                    );
+                });
+                return;
+            }
+
+            if (typeof mapOrList === 'object') {
+                Object.keys(mapOrList).forEach((key) => {
+                    addScoutEstimate(key, mapOrList[key]);
+                });
+            }
+        };
+
+        window.addEventListener('wm-scout-estimate', (evt) => {
+            const detail = evt && evt.detail;
+            if (!detail) return;
+
+            const isSingleRecord =
+                detail && typeof detail === 'object' &&
+                (detail.xid || detail.id || detail.user_id || detail.player_id);
+
+            if (isSingleRecord) {
+                addScoutEstimate(
+                    detail.xid || detail.id || detail.user_id || detail.player_id,
+                    detail.estimate || detail.est || detail.value || detail.battleStats || detail.battlestats
+                );
+                return;
+            }
+
+            window.WM_setScoutEstimates(detail);
+        });
+    }
+
+    function collectEstimateHintsFromElement(el) {
+        if (!el) return [];
+        const hints = [];
+
+        const attrs = [
+            'title',
+            'aria-label',
+            'data-tooltip',
+            'data-original-title',
+            'data-bse',
+            'data-bs',
+            'data-battle-stats',
+            'data-estimate',
+            'data-ff-score',
+            'data-ff'
+        ];
+
+        attrs.forEach((attr) => {
+            const val = el.getAttribute && el.getAttribute(attr);
+            if (val) hints.push(val);
+        });
+
+        if (el.textContent) hints.push(el.textContent);
+
+        const row = el.closest && el.closest('li, tr, [class*="user" i], [class*="member" i], [class*="profile" i], div');
+        if (row) {
+            if (row.textContent) hints.push(row.textContent);
+            const labeledNodes = row.querySelectorAll('[title],[aria-label],[data-tooltip],[data-original-title],[data-battle-stats],[data-estimate],[data-ff-score],[data-ff]');
+            labeledNodes.forEach((node) => {
+                const t1 = node.getAttribute && node.getAttribute('title');
+                const t2 = node.getAttribute && node.getAttribute('aria-label');
+                const t3 = node.getAttribute && node.getAttribute('data-tooltip');
+                const t4 = node.getAttribute && node.getAttribute('data-original-title');
+                const t5 = node.getAttribute && node.getAttribute('data-battle-stats');
+                const t6 = node.getAttribute && node.getAttribute('data-estimate');
+                const t7 = node.getAttribute && node.getAttribute('data-ff-score');
+                const t8 = node.getAttribute && node.getAttribute('data-ff');
+                [t1, t2, t3, t4, t5, t6, t7, t8].forEach((v) => {
+                    if (v) hints.push(v);
+                });
+            });
+        }
+
+        return hints;
+    }
+
+    function getScoutEstimateFromDom(xid) {
+        const xidStr = String(xid || '');
+        if (!xidStr) return '';
+
+        const selectors = [
+            'a[href*="XID=' + xidStr + '"]',
+            'a[href*="user2ID=' + xidStr + '"]',
+            '[data-xid="' + xidStr + '"]',
+            '[data-user-id="' + xidStr + '"]',
+            '[data-userid="' + xidStr + '"]',
+            '[data-player-id="' + xidStr + '"]'
+        ];
+
+        for (const selector of selectors) {
+            const nodes = document.querySelectorAll(selector);
+            for (const node of nodes) {
+                const hints = collectEstimateHintsFromElement(node);
+                for (const hint of hints) {
+                    const parsed = extractEstimateFromText(hint);
+                    if (parsed) return parsed;
+                }
+            }
+        }
+
+        return '';
+    }
+
+    function getScoutEstimateFromStorage(xid) {
+        const xidStr = String(xid || '');
+        if (!xidStr) return '';
+
+        const keyPattern = /(scout|estimate|battle|battlestat|fairfight|ff|torntools)/i;
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (!key || !keyPattern.test(key)) continue;
+
+            let raw = '';
+            try {
+                raw = localStorage.getItem(key) || '';
+            } catch (e) {
+                continue;
+            }
+
+            if (!raw) continue;
+
+            try {
+                const parsed = JSON.parse(raw);
+                const byXid = extractEstimateFromContainer(parsed, xidStr);
+                if (byXid) return byXid;
+            } catch (e) {
+                // Some keys are not JSON.
+            }
+
+            if (raw.indexOf(xidStr) !== -1) {
+                const inline = extractEstimateFromText(raw);
+                if (inline) return inline;
+            }
+        }
+
         return '';
     }
 
@@ -420,7 +665,41 @@
             }
         }
 
+        const storageEstimate = getScoutEstimateFromStorage(xidStr);
+        if (storageEstimate) {
+            scoutEstimateMemo[xidStr] = storageEstimate;
+            return storageEstimate;
+        }
+
+        const domEstimate = getScoutEstimateFromDom(xidStr);
+        if (domEstimate) {
+            scoutEstimateMemo[xidStr] = domEstimate;
+            return domEstimate;
+        }
+
         return '';
+    }
+
+    function scheduleScoutEstimateRepaint(ids, myCity, resultsContainer, options) {
+        if (scoutEstimateRepaintTimerId) {
+            clearTimeout(scoutEstimateRepaintTimerId);
+            scoutEstimateRepaintTimerId = null;
+        }
+
+        const missingForOkay = ids.reduce((count, id) => {
+            const snap = targetTravelSnapshot[id];
+            if (!snap) return count;
+            if (!/okay/i.test(String(snap.state || ''))) return count;
+            return getExternalScoutEstimate(id) ? count : count + 1;
+        }, 0);
+
+        if (!missingForOkay) return;
+
+        scoutEstimateRepaintTimerId = setTimeout(() => {
+            scoutEstimateRepaintTimerId = null;
+            if (activeRefreshRun) return;
+            renderGroupedResults(ids, myCity, resultsContainer, options || {});
+        }, 2200);
     }
 
     // ---------- Utility: storage ----------
@@ -627,7 +906,7 @@
     function recordRequestSuccess() {
         requestMinSpacingMs = Math.max(
             REQUEST_MIN_SPACING_BASE_MS,
-            requestMinSpacingMs - 20
+            requestMinSpacingMs - 15
         );
     }
 
@@ -638,8 +917,18 @@
 
         requestMinSpacingMs = Math.min(
             REQUEST_MIN_SPACING_MAX_MS,
-            Math.max(requestMinSpacingMs + 140, suggestedSpacing)
+            Math.max(requestMinSpacingMs + 200, suggestedSpacing)
         );
+        requestCooldownUntilMs = Math.max(
+            requestCooldownUntilMs,
+            Date.now() + (Number.isFinite(retryAfterMs) ? Math.max(0, retryAfterMs) : 0) + 350
+        );
+    }
+
+    function resetRequestPacing() {
+        requestPacerCursorMs = 0;
+        requestCooldownUntilMs = 0;
+        requestMinSpacingMs = REQUEST_MIN_SPACING_BASE_MS;
     }
 
     async function waitForRequestSlot(signal) {
@@ -648,7 +937,11 @@
             // Prevent stale queue debt from a previous refresh from delaying a new run.
             requestPacerCursorMs = now;
         }
-        const slot = Math.max(now, requestPacerCursorMs);
+        if (requestCooldownUntilMs && requestCooldownUntilMs < now) {
+            requestCooldownUntilMs = 0;
+        }
+
+        const slot = Math.max(now, requestPacerCursorMs, requestCooldownUntilMs);
         requestPacerCursorMs = slot + requestMinSpacingMs;
 
         const waitMs = slot - now;
@@ -660,6 +953,17 @@
         await sleep(waitMs);
         if (signal && signal.aborted) {
             throw new DOMException('Aborted', 'AbortError');
+        }
+
+        const cooldownWaitMs = requestCooldownUntilMs - Date.now();
+        if (cooldownWaitMs > 0) {
+            if (signal && signal.aborted) {
+                throw new DOMException('Aborted', 'AbortError');
+            }
+            await sleep(cooldownWaitMs);
+            if (signal && signal.aborted) {
+                throw new DOMException('Aborted', 'AbortError');
+            }
         }
     }
 
@@ -1262,6 +1566,29 @@
         const body = document.createElement('div');
         body.className = 'WM-war-body';
 
+        function createControlSection(titleText, noteText) {
+            const section = document.createElement('div');
+            section.className = 'WM-control-section';
+
+            const titleEl = document.createElement('div');
+            titleEl.className = 'WM-control-section-title';
+            titleEl.textContent = titleText;
+            section.appendChild(titleEl);
+
+            if (noteText) {
+                const noteEl = document.createElement('div');
+                noteEl.className = 'WM-control-section-note';
+                noteEl.textContent = noteText;
+                section.appendChild(noteEl);
+            }
+
+            const group = document.createElement('div');
+            group.className = 'WM-control-group';
+            section.appendChild(group);
+
+            return { section, group };
+        }
+
         // ----- API row -----
         const apiRow = document.createElement('div');
         apiRow.className = 'WM-row';
@@ -1289,49 +1616,56 @@
         targetsTextarea.className = 'WM-targets-textarea';
         targetsTextarea.value = getTargetsText();
 
-        // ----- Targets controls row -----
-        const controlsRow = document.createElement('div');
-        controlsRow.className = 'WM-row';
+        // ----- Target controls -----
+        const controlsStack = document.createElement('div');
+        controlsStack.style.display = 'grid';
+        controlsStack.style.gridTemplateColumns = '1fr';
+        controlsStack.style.gap = '8px';
 
-        const buttonsLeft = document.createElement('div');
-        buttonsLeft.className = 'WM-row';
-        buttonsLeft.style.gap = '6px';
-        buttonsLeft.style.flex = '1 1 auto';
+        const listSection = createControlSection(
+            'List',
+            'Keep your target list tidy before refreshing.'
+        );
+        const importSection = createControlSection(
+            'Import',
+            'Pull IDs from the current page or active war data.'
+        );
+        const refreshSection = createControlSection(
+            'Refresh',
+            'Fetch statuses with pacing tuned to avoid Torn API bursts.'
+        );
+        const filterSection = createControlSection(
+            'Filter',
+            'Narrow the board to the group you care about.'
+        );
+        const linksSection = createControlSection(
+            'Links',
+            'Quick access to the related Torn and project pages.'
+        );
 
-        const importBtn = createButton('Import Page');
-        const warImportBtn = createButton('Import Faction War');
         const copyBtn = createButton('Copy XIDs');
         const saveBtn = createButton('Save List');
         const clearBtn = createButton('Clear');
+        appendChildren(listSection.group, [copyBtn, saveBtn, clearBtn]);
 
-        appendChildren(buttonsLeft, [importBtn, warImportBtn, copyBtn, saveBtn, clearBtn]);
+        const importBtn = createButton('Import Page');
+        const warImportBtn = createButton('Import Faction War');
+        appendChildren(importSection.group, [importBtn, warImportBtn]);
 
         const refreshBtn = createButton('Refresh Status & Group', 'WM-small-btn-main');
         const forceRefreshBtn = createButton('Force Refresh');
         const cancelBtn = createButton('Cancel');
         cancelBtn.disabled = true;
         cancelBtn.style.opacity = '0.6';
-
         const closeBtn = createButton('Close');
-
-        appendChildren(controlsRow, [buttonsLeft, refreshBtn, forceRefreshBtn, cancelBtn, closeBtn]);
-
-        const filterRow = document.createElement('div');
-        filterRow.className = 'WM-row';
-        filterRow.style.flexWrap = 'wrap';
-
-        const filterLabel = document.createElement('div');
-        filterLabel.className = 'WM-panel-small';
-        filterLabel.textContent = 'Filter:';
+        appendChildren(refreshSection.group, [refreshBtn, forceRefreshBtn, cancelBtn, closeBtn]);
 
         const filterAllBtn = createButton('All');
         const filterLocalBtn = createButton('Local + Okay');
         const filterHospBtn = createButton('Hospital/Jail');
         const filterTravelBtn = createButton('Travel/Abroad');
         const filterErrorBtn = createButton('Errors');
-
-        appendChildren(filterRow, [
-            filterLabel,
+        appendChildren(filterSection.group, [
             filterAllBtn,
             filterLocalBtn,
             filterHospBtn,
@@ -1339,21 +1673,19 @@
             filterErrorBtn
         ]);
 
-        // ----- Community / Support row -----
-        const communityRow = document.createElement('div');
-        communityRow.className = 'WM-row';
-        communityRow.style.flexWrap = 'wrap';
-
-        const communityLabel = document.createElement('div');
-        communityLabel.className = 'WM-panel-small';
-        communityLabel.textContent = 'Links:';
-
         const forumBtn = createButton('GitHub');
         const applyBtn = createButton('Apply to Faction');
         const donateBtn = createButton('Donate Xanax');
         const refBtn = createButton('Referral Profile');
+        appendChildren(linksSection.group, [forumBtn, applyBtn, donateBtn, refBtn]);
 
-        appendChildren(communityRow, [communityLabel, forumBtn, applyBtn, donateBtn, refBtn]);
+        appendChildren(controlsStack, [
+            listSection.section,
+            importSection.section,
+            refreshSection.section,
+            filterSection.section,
+            linksSection.section
+        ]);
 
         // ----- Results area -----
         const results = document.createElement('div');
@@ -1362,9 +1694,7 @@
         body.appendChild(apiRow);
         body.appendChild(targetsInfo);
         body.appendChild(targetsTextarea);
-        body.appendChild(controlsRow);
-        body.appendChild(filterRow);
-        body.appendChild(communityRow);
+        body.appendChild(controlsStack);
         body.appendChild(summaryLine);
         body.appendChild(results);
 
@@ -2035,6 +2365,8 @@
         const filterMode = options && options.filterMode ? options.filterMode : 'all';
         const summaryLine = options && options.summaryLine ? options.summaryLine : null;
 
+        resetRequestPacing();
+
         const apiKey = getApiKey();
         if (!apiKey) {
             statusLine.textContent =
@@ -2089,6 +2421,11 @@
 
         // Build grouped view
         renderGroupedResults(ids, myCity, resultsContainer, {
+            filterMode,
+            summaryLine
+        });
+
+        scheduleScoutEstimateRepaint(ids, myCity, resultsContainer, {
             filterMode,
             summaryLine
         });
@@ -2181,10 +2518,20 @@
             nameSpan.textContent =
                 cityKey + (cityKey === myCity ? '  (YOU)' : '');
 
+            const badge = document.createElement('span');
+            badge.style.display = 'inline-block';
+            badge.style.width = '8px';
+            badge.style.height = '8px';
+            badge.style.borderRadius = '50%';
+            badge.style.marginRight = '8px';
+            badge.style.flex = '0 0 auto';
+            badge.style.background = getCityBadgeColor(cityKey, myCity);
+
             const countSpan = document.createElement('span');
             countSpan.className = 'WM-city-count';
             countSpan.textContent = snaps.length + ' target(s)';
 
+            header.appendChild(badge);
             header.appendChild(nameSpan);
             header.appendChild(countSpan);
 
@@ -2206,12 +2553,12 @@
                 const sameCity =
                     cityKey === myCity ||
                     (where && myCity && where.indexOf(myCity) !== -1);
-                const flags = getSnapFlags(state, where, sameCity);
                 const isTravelling =
                     !!snap.traveling || /travel|flying/i.test(state) || /flying to/i.test(where);
                 const isAbroad =
                     !isTravelling &&
                     (Boolean(snap.destination) || /abroad/i.test(where) || /abroad/i.test(state));
+                const flags = getSnapFlags(state, where, sameCity, isTravelling, isAbroad);
                 const isOkay = /okay/i.test(state);
 
                 if (!includeByFilter(snap, cityKey)) {
@@ -2422,6 +2769,7 @@
     // ---------- Init ----------
 
     function init() {
+        initScoutEstimateBridge();
         applyNeonThemeVars(getSettings().neonColor);
         if (
             document.readyState === 'complete' ||
