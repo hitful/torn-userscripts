@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WarMode v1 by hit
 // @namespace    https://github.com/hitful/torn-userscripts
-// @version      1.1.1
+// @version      1.1.2
 // @description  Activate War Mode with your own custom dashboard: import targets, auto-check status, group by location, and click to attack/profile from a single unified window. Ignores your own XID on import, includes forum/faction/donate/referral links.
 // @author       hit
 // @match        https://www.torn.com/*
@@ -195,6 +195,27 @@
             display: flex;
             flex-wrap: wrap;
             gap: 6px;
+        }
+        .WM-controls-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+            align-items: start;
+        }
+        .WM-control-section--refresh,
+        .WM-control-section--filter,
+        .WM-control-section--links {
+            grid-column: 1 / -1;
+        }
+        @media (max-width: 900px) {
+            .WM-controls-grid {
+                grid-template-columns: 1fr;
+            }
+            .WM-control-section--refresh,
+            .WM-control-section--filter,
+            .WM-control-section--links {
+                grid-column: auto;
+            }
         }
         .WM-targets-textarea {
             width: 100%;
@@ -1566,9 +1587,12 @@
         const body = document.createElement('div');
         body.className = 'WM-war-body';
 
-        function createControlSection(titleText, noteText) {
+        function createControlSection(titleText, noteText, sectionType) {
             const section = document.createElement('div');
             section.className = 'WM-control-section';
+            if (sectionType) {
+                section.className += ' WM-control-section--' + sectionType;
+            }
 
             const titleEl = document.createElement('div');
             titleEl.className = 'WM-control-section-title';
@@ -1618,29 +1642,32 @@
 
         // ----- Target controls -----
         const controlsStack = document.createElement('div');
-        controlsStack.style.display = 'grid';
-        controlsStack.style.gridTemplateColumns = '1fr';
-        controlsStack.style.gap = '8px';
+        controlsStack.className = 'WM-controls-grid';
 
         const listSection = createControlSection(
             'List',
-            'Keep your target list tidy before refreshing.'
+            'Keep your target list tidy before refreshing.',
+            'list'
         );
         const importSection = createControlSection(
             'Import',
-            'Pull IDs from the current page or active war data.'
+            'Pull IDs from the current page or active war data.',
+            'import'
         );
         const refreshSection = createControlSection(
             'Refresh',
-            'Fetch statuses with pacing tuned to avoid Torn API bursts.'
+            'Fetch statuses with pacing tuned to avoid Torn API bursts.',
+            'refresh'
         );
         const filterSection = createControlSection(
             'Filter',
-            'Narrow the board to the group you care about.'
+            'Narrow the board to the group you care about.',
+            'filter'
         );
         const linksSection = createControlSection(
             'Links',
-            'Quick access to the related Torn and project pages.'
+            'Quick access to the related Torn and project pages.',
+            'links'
         );
 
         const copyBtn = createButton('Copy XIDs');
