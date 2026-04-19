@@ -1,14 +1,14 @@
 // ==UserScript==
 // @name         WarMode v1 by hit
-// @namespace    https://github.com/hitful/torn-userscripts/blob/main/warmode.js
-// @version      1.1.0
+// @namespace    https://github.com/hitful/torn-userscripts
+// @version      1.1.1
 // @description  Activate War Mode with your own custom dashboard: import targets, auto-check status, group by location, and click to attack/profile from a single unified window. Ignores your own XID on import, includes forum/faction/donate/referral links.
 // @author       hit
 // @match        https://www.torn.com/*
 // @license      MIT
 // @grant        none
-// @downloadURL  https://raw.githubusercontent.com/hitful/torn-userscripts/main/warmode.js
-// @updateURL    https://raw.githubusercontent.com/hitful/torn-userscripts/main/warmode.js
+// @downloadURL  https://raw.githubusercontent.com/hitful/torn-userscripts/refs/heads/main/warmode.js
+// @updateURL    https://raw.githubusercontent.com/hitful/torn-userscripts/refs/heads/main/warmode.js
 // ==/UserScript==
 
 (function () {
